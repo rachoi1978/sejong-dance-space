@@ -20,34 +20,43 @@ export default function Home() {
   const [showMenu, setShowMenu] = useState(false);
 
   // 연습실 설정
+  // - ranking은 "화면 목록"에서만 쓰고 실제 예약 화면엔 포함하지 않기 위해 분리 처리
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
+
+    // 기본 승인 불필요
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
     { id: 'saenalD', name: '새날관 D', type: 'open', needsApproval: false },
     { id: 'saenalE', name: '새날관 E', type: 'open', needsApproval: false },
-    { id: 'gwangB', name: '광개토관 B', type: 'open', needsApproval: false },
-    { id: 'gwangC', name: '광개토관 C', type: 'open', needsApproval: false },
+    { id: 'gwangB',  name: '광개토관 B', type: 'open', needsApproval: false },
+    { id: 'gwangC',  name: '광개토관 C', type: 'open', needsApproval: false },
+
+    // 기본 승인 필요
+    { id: 'saenalB',  name: '새날관 B', type: 'approval', needsApproval: true },
+    { id: 'gwangA',   name: '광개토관 A', type: 'approval', needsApproval: true },
+
+    // 별도 승인 홀 예시(요청엔 없지만 기존 코드 유지 시 포함 가능)
     { id: 'daeyangHall', name: '대양AI 다목적홀', type: 'approval', needsApproval: true },
-    { id: 'saenalB', name: '새날관 B', type: 'approval', needsApproval: true },
-    { id: 'gwangA', name: '광개토관 A', type: 'approval', needsApproval: true }
   ];
 
-  // 스크린 구성:
-  // 0 = 메인, 1 = 랭킹, 2..(rooms.length+1) = 각 연습실, 마지막 = 내 예약 현황
-  const INDEX_MAIN = 0;
-  const INDEX_RANKING = 1;
-  const INDEX_ROOMS_START = 2;
-  const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + rooms.length; // 마지막
-  const MAX_INDEX = INDEX_MY_RESERVATIONS;
+  // "예약 화면용" 목록 (랭킹 제외)
+  const roomScreens = rooms.filter(r => r.type !== 'ranking');
 
-  // 시간대 설정
+  // 스크린 인덱스
+  const INDEX_MAIN = 0;               // 메인
+  const INDEX_RANKING = 1;            // 랭킹
+  const INDEX_ROOMS_START = 2;        // 실룸 시작
+  const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + roomScreens.length; // 마지막: 내 예약
+  const MAX_INDEX = INDEX_MY_RESERVATIONS; // 0..MAX_INDEX
+
+  // 시간대
   const timeSlots = [
     '07:00','08:00','09:00','10:00','11:00','12:00',
     '13:00','14:00','15:00','16:00','17:00','18:00',
     '19:00','20:00','21:00','22:00','23:00'
   ];
 
-  // TOP 10 랭킹 데이터 (예시)
+  // TOP 10 (샘플)
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -61,13 +70,13 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
-  // 스와이프 함수
+  // 스와이프
   const handleSwipe = (direction: 'left' | 'right') => {
     if (direction === 'left' && currentScreen < MAX_INDEX) setCurrentScreen(currentScreen + 1);
     else if (direction === 'right' && currentScreen > 0) setCurrentScreen(currentScreen - 1);
   };
 
-  // 터치 이벤트 처리
+  // 터치
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
@@ -75,13 +84,13 @@ export default function Home() {
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > 50;
-    const isRightSwipe = distance < -50;
-    if (isLeftSwipe) handleSwipe('left');
-    if (isRightSwipe) handleSwipe('right');
+    const isLeft = distance > 50;
+    const isRight = distance < -50;
+    if (isLeft) handleSwipe('left');
+    if (isRight) handleSwipe('right');
   };
 
-  // 날짜 관련 함수
+  // 날짜 함수
   const formatDate = (date: Date) =>
     date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
 
@@ -105,7 +114,7 @@ export default function Home() {
     return reservations[roomId]?.[dateKey]?.[timeKey] || null;
   };
 
-  // 예약 처리
+  // 예약 처리 (승인 규칙 적용)
   const makeReservation = (roomId: string, date: Date, time: string) => {
     if (!userInfo.studentId || !userInfo.name || !userInfo.major) {
       setSelectedRoom(roomId);
@@ -118,11 +127,10 @@ export default function Home() {
     const dateKey = date.toDateString();
     const timeKey = `${time}`;
 
-    // 주말/새벽 체크
-    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-    const hour = parseInt(time.split(':')[0]);
-    const isDawn = hour >= 23 || hour < 7;
-    const needsApproval = (room?.needsApproval ?? false) || isWeekend || isDawn;
+    // 규칙: 모든 홀에서 23:00 이후만 승인 필요 + (새날B, 광개A는 기본 승인필요)
+    const hour = parseInt(time.split(':')[0], 10);
+    const isLateNight = hour >= 23;
+    const needsApproval = (room?.needsApproval ?? false) || isLateNight;
 
     const newReservation = {
       studentId: userInfo.studentId,
@@ -160,12 +168,13 @@ export default function Home() {
     });
   };
 
-  // 취소 모달
+  // 모달
   const openCancelModal = (roomId: string, date: Date, time: string, reservation: any) => {
     setCancelTarget({ roomId, date, time, reservation });
     setShowCancelModal(true);
   };
 
+  // 화면들
   const renderMainScreen = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
       <div className="text-center mb-8">
@@ -181,7 +190,7 @@ export default function Home() {
             <p>• 예약 시간을 준수해주세요</p>
             <p>• 사용 후 반드시 청소해주세요</p>
             <p>• 시설 파손 시 즉시 신고해주세요</p>
-            <p>• 새벽시간(23:00~07:00)과 주말은 승인이 필요합니다</p>
+            <p>• 23:00 이후 예약은 승인 절차가 필요합니다</p>
             <p className="text-red-600 font-medium">• ⚠️ 노쇼는 다음 연습실 사용에 제약이 있을 수 있습니다</p>
             <p className="text-red-600 font-medium">• ⚠️ 연습실 사용을 안할 경우, 반드시 캔슬바랍니다</p>
           </div>
@@ -342,10 +351,8 @@ export default function Home() {
             <div className="grid grid-cols-4 gap-3">
               {timeSlots.map(time => {
                 const reservation = getReservationStatus(room.id, selectedDate, time);
-                const hour = parseInt(time.split(':')[0]);
-                const isDawn = hour >= 23 || hour < 7;
-                const isWeekend = selectedDate.getDay() === 0 || selectedDate.getDay() === 6;
-                const needsSpecialApproval = isDawn || isWeekend;
+                const hour = parseInt(time.split(':')[0], 10);
+                const isLateNight = hour >= 23;
 
                 return (
                   <button
@@ -372,12 +379,10 @@ export default function Home() {
                           : reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
                           ? 'bg-yellow-400 text-white cursor-pointer hover:bg-yellow-500 ring-2 ring-yellow-300'
                           : 'bg-yellow-400 text-white cursor-not-allowed'
-                        : needsSpecialApproval
-                        ? room.type === 'approval'
-                          ? 'bg-red-100 border-2 border-red-400 text-red-700 hover:bg-red-200'
-                          : 'bg-orange-100 border-2 border-orange-400 text-orange-700 hover:bg-orange-200'
-                        : room.type === 'approval'
-                        ? 'bg-orange-100 border-2 border-orange-400 text-orange-700 hover:bg-orange-200'
+                        : isLateNight || room.needsApproval
+                        ? room.needsApproval
+                          ? 'bg-orange-100 border-2 border-orange-400 text-orange-700 hover:bg-orange-200'
+                          : 'bg-red-100 border-2 border-red-400 text-red-700 hover:bg-red-200'
                         : 'bg-green-100 border-2 border-green-400 text-green-700 hover:bg-green-200'
                     }`}
                     disabled={reservation && !(reservation.studentId === userInfo.studentId && reservation.name === userInfo.name)}
@@ -396,9 +401,9 @@ export default function Home() {
                         )}
                       </div>
                     )}
-                    {!reservation && (needsSpecialApproval || room.type === 'approval') && (
+                    {!reservation && (isLateNight || room.needsApproval) && (
                       <div className="text-xs mt-1">
-                        {needsSpecialApproval ? '새벽연습(승인필요)' : '승인필요'}
+                        {room.needsApproval ? '승인필요' : '23:00 이후 승인필요'}
                       </div>
                     )}
                   </button>
@@ -411,17 +416,22 @@ export default function Home() {
     </div>
   );
 
-  // 내 예약 현황
+  // 내 예약 현황: 이름만으로 검색 가능
+  const [nameQuery, setNameQuery] = useState('');
   const renderMyReservations = () => {
-    // userInfo가 없으면 안내
-    const mine: Array<{roomId:string; roomName:string; date: string; time: string; status: string}> = [];
+    const mine: Array<{roomId:string; roomName:string; date: string; time: string; status: string; name: string}> = [];
     Object.entries(reservations).forEach(([roomId, byDate]: any) => {
       Object.entries(byDate).forEach(([dateKey, byTime]: any) => {
         Object.entries(byTime).forEach(([timeKey, value]: any) => {
-          if (value.studentId === userInfo.studentId && value.name === userInfo.name) {
-            const roomName = rooms.find(r => r.id === roomId)?.name ?? roomId;
-            mine.push({ roomId, roomName, date: dateKey, time: timeKey, status: value.status });
+          // 이름 필터 (대소문자 무시, 공백 허용)
+          if (nameQuery.trim().length > 0) {
+            if (!String(value.name).toLowerCase().includes(nameQuery.trim().toLowerCase())) return;
+          } else {
+            // 이름 검색어가 비어 있으면, 기존 방식대로 "로그인된 본인" 정보로 제한
+            if (!(value.studentId === userInfo.studentId && value.name === userInfo.name)) return;
           }
+          const roomName = rooms.find(r => r.id === roomId)?.name ?? roomId;
+          mine.push({ roomId, roomName, date: dateKey, time: timeKey, status: value.status, name: value.name });
         });
       });
     });
@@ -430,9 +440,26 @@ export default function Home() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50 p-4">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold mb-4">내 예약 현황</h2>
-          {!userInfo.studentId || !userInfo.name ? (
-            <div className="bg-white p-6 rounded-xl shadow">
-              <p className="text-gray-700 mb-3">먼저 예약 시 사용한 <b>학번/이름/세부전공</b>을 입력하세요.</p>
+
+          {/* 이름 검색 */}
+          <div className="bg-white p-4 rounded-xl shadow mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">신청자 이름으로 검색</label>
+            <input
+              type="text"
+              placeholder="이름을 입력하세요 (예: 김민수)"
+              className="w-full p-3 border rounded-lg"
+              value={nameQuery}
+              onChange={(e) => setNameQuery(e.target.value)}
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              ※ 이름을 입력하면 해당 이름의 모든 예약이 표시됩니다. 입력하지 않으면 현재 입력된 학번/이름/전공 정보와 일치하는 예약만 보여요.
+            </p>
+          </div>
+
+          {/* 사용자 기본 정보 입력 박스 (이름 검색을 쓰지 않는 경우에 대비) */}
+          {nameQuery.trim().length === 0 && (!userInfo.studentId || !userInfo.name) && (
+            <div className="bg-white p-6 rounded-xl shadow mb-4">
+              <p className="text-gray-700 mb-3">이름 검색 대신, 예약 시 사용한 <b>학번/이름/세부전공</b>을 입력하세요.</p>
               <div className="grid grid-cols-1 gap-3">
                 <input
                   type="text"
@@ -457,9 +484,11 @@ export default function Home() {
                 />
               </div>
             </div>
-          ) : mine.length === 0 ? (
+          )}
+
+          {mine.length === 0 ? (
             <div className="bg-white p-6 rounded-xl shadow">
-              <p className="text-gray-600">현재 표시할 예약이 없습니다.</p>
+              <p className="text-gray-600">표시할 예약이 없습니다.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -470,12 +499,13 @@ export default function Home() {
                   <div>
                     <div className="text-sm text-gray-500">{item.roomName}</div>
                     <div className="text-lg font-semibold text-purple-700">{item.date} {item.time}</div>
-                    <div className="text-xs text-gray-500">{item.status === 'approved' ? '승인됨' : '승인대기'}</div>
+                    <div className="text-xs text-gray-500">
+                      {item.status === 'approved' ? '승인됨' : '승인대기'} · 신청자 {item.name}
+                    </div>
                   </div>
                   <button
                     className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600"
                     onClick={() => {
-                      // date string을 다시 Date로
                       const d = new Date(item.date);
                       cancelReservation(item.roomId, d, item.time);
                     }}
@@ -598,8 +628,12 @@ export default function Home() {
     if (currentScreen === INDEX_MAIN) return renderMainScreen();
     if (currentScreen === INDEX_RANKING) return renderRankingScreen();
     if (currentScreen === INDEX_MY_RESERVATIONS) return renderMyReservations();
-    const roomIndex = currentScreen - INDEX_ROOMS_START;
-    return renderRoomScreen(rooms[roomIndex]);
+
+    // 실룸 인덱스 매핑 (빈 페이지 방지)
+    const idxInRooms = currentScreen - INDEX_ROOMS_START;
+    const theRoom = roomScreens[idxInRooms];
+    if (!theRoom) return renderMainScreen(); // 안전장치
+    return renderRoomScreen(theRoom);
   };
 
   return (
@@ -640,8 +674,8 @@ export default function Home() {
 
             <div className="border-t my-2" />
 
-            {rooms.filter(r => r.type !== 'ranking').map((r, i) => {
-              const idx = INDEX_ROOMS_START + rooms.findIndex(x => x.id === r.id);
+            {roomScreens.map((r, i) => {
+              const idx = INDEX_ROOMS_START + i;
               return (
                 <button
                   key={r.id}
@@ -667,7 +701,7 @@ export default function Home() {
 
       {renderCurrentScreen()}
 
-      {/* 네비게이션 인디케이터 */}
+      {/* 네비게이션 인디케이터 (빈 페이지 제거 후 정확한 총 페이지 수 표시) */}
       {currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 shadow-lg">
           <div className="flex items-center space-x-2">
