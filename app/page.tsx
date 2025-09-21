@@ -1,30 +1,68 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu } from 'lucide-react';
 
 export default function Home() {
+  // 동의 게이트
+  const [agreed, setAgreed] = useState(false);
+
+  // 화면 상태
   const [currentScreen, setCurrentScreen] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 날짜/예약 상태
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [reservations, setReservations] = useState<any>({});
   const [userInfo, setUserInfo] = useState({ studentId: '', name: '', major: '' });
+
+  // 예약 플로우
   const [showUserForm, setShowUserForm] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
-  const [agreed, setAgreed] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
-  // 햄버거
+  // 메뉴
   const [showMenu, setShowMenu] = useState(false);
 
+  // 로컬 지속화(localStorage)
+  const LS_KEYS = {
+    reservations: 'sds_reservations_v1',
+    userInfo: 'sds_userInfo_v1',
+    agreed: 'sds_agreed_v1',
+  };
+
+  useEffect(() => {
+    try {
+      const r = localStorage.getItem(LS_KEYS.reservations);
+      if (r) setReservations(JSON.parse(r));
+      const u = localStorage.getItem(LS_KEYS.userInfo);
+      if (u) setUserInfo(JSON.parse(u));
+      const a = localStorage.getItem(LS_KEYS.agreed);
+      if (a) setAgreed(a === 'true');
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {}
+  }, [reservations]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {}
+  }, [userInfo]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEYS.agreed, String(agreed)); } catch {}
+    if (!agreed) {
+      setCurrentScreen(0);
+      setShowMenu(false);
+    }
+  }, [agreed]);
+
   // 연습실 설정
-  // - ranking은 "화면 목록"에서만 쓰고 실제 예약 화면엔 포함하지 않기 위해 분리 처리
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
 
-    // 기본 승인 불필요
+    // 승인 불필요
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
     { id: 'saenalD', name: '새날관 D', type: 'open', needsApproval: false },
     { id: 'saenalE', name: '새날관 E', type: 'open', needsApproval: false },
@@ -35,19 +73,17 @@ export default function Home() {
     { id: 'saenalB',  name: '새날관 B', type: 'approval', needsApproval: true },
     { id: 'gwangA',   name: '광개토관 A', type: 'approval', needsApproval: true },
 
-    // 별도 승인 홀 예시(요청엔 없지만 기존 코드 유지 시 포함 가능)
+    // 유지
     { id: 'daeyangHall', name: '대양AI 다목적홀', type: 'approval', needsApproval: true },
   ];
-
-  // "예약 화면용" 목록 (랭킹 제외)
   const roomScreens = rooms.filter(r => r.type !== 'ranking');
 
   // 스크린 인덱스
-  const INDEX_MAIN = 0;               // 메인
-  const INDEX_RANKING = 1;            // 랭킹
-  const INDEX_ROOMS_START = 2;        // 실룸 시작
-  const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + roomScreens.length; // 마지막: 내 예약
-  const MAX_INDEX = INDEX_MY_RESERVATIONS; // 0..MAX_INDEX
+  const INDEX_MAIN = 0;
+  const INDEX_RANKING = 1;
+  const INDEX_ROOMS_START = 2;
+  const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + roomScreens.length;
+  const MAX_INDEX = INDEX_MY_RESERVATIONS;
 
   // 시간대
   const timeSlots = [
@@ -56,7 +92,7 @@ export default function Home() {
     '19:00','20:00','21:00','22:00','23:00'
   ];
 
-  // TOP 10 (샘플)
+  // TOP10 샘플
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -70,52 +106,47 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
-  // 스와이프
+  // 스와이프(동의 전에는 무시)
   const handleSwipe = (direction: 'left' | 'right') => {
+    if (!agreed) return;
     if (direction === 'left' && currentScreen < MAX_INDEX) setCurrentScreen(currentScreen + 1);
     else if (direction === 'right' && currentScreen > 0) setCurrentScreen(currentScreen - 1);
   };
-
-  // 터치
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
-  const onTouchMove = (e: React.TouchEvent) => { setTouchEnd(e.targetTouches[0].clientX); };
+  const onTouchStart = (e: React.TouchEvent) => { if (!agreed) return; setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
+  const onTouchMove = (e: React.TouchEvent) => { if (!agreed) return; setTouchEnd(e.targetTouches[0].clientX); };
   const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
+    if (!agreed || !touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
-    const isLeft = distance > 50;
-    const isRight = distance < -50;
-    if (isLeft) handleSwipe('left');
-    if (isRight) handleSwipe('right');
+    if (distance > 50) handleSwipe('left');
+    if (distance < -50) handleSwipe('right');
   };
 
-  // 날짜 함수
-  const formatDate = (date: Date) =>
-    date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-
+  // 날짜 헬퍼
+  const formatDate = (date: Date) => date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
-    const days: (Date | null)[] = [];
-    for (let i = 0; i < startingDayOfWeek; i++) days.push(null);
-    for (let day = 1; day <= daysInMonth; day++) days.push(new Date(year, month, day));
+    const year = date.getFullYear(), month = date.getMonth();
+    const firstDay = new Date(year, month, 1), lastDay = new Date(year, month + 1, 0);
+    const days: (Date | null)[] = Array(firstDay.getDay()).fill(null);
+    for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, month, d));
     return days;
   };
 
-  // 예약 상태 확인
+  // 상태 조회
   const getReservationStatus = (roomId: string, date: Date, time: string) => {
-    const dateKey = date.toDateString();
-    const timeKey = `${time}`;
+    const dateKey = date.toDateString(); const timeKey = `${time}`;
     return reservations[roomId]?.[dateKey]?.[timeKey] || null;
   };
 
-  // 예약 처리 (승인 규칙 적용)
+  // 예약: “시간 먼저 선택 → 정보 입력”
+  // 승인 규칙: 23:00 이후는 모두 승인 필요 + (새날B/광개A/대양홀 기본 승인필요)
   const makeReservation = (roomId: string, date: Date, time: string) => {
+    const hour = parseInt(time.split(':')[0], 10);
+    const isLateNight = hour >= 23;
+    const room = rooms.find(r => r.id === roomId);
+    const needsApproval = (room?.needsApproval ?? false) || isLateNight;
+
     if (!userInfo.studentId || !userInfo.name || !userInfo.major) {
       setSelectedRoom(roomId);
       setSelectedTime(time);
@@ -123,15 +154,7 @@ export default function Home() {
       return;
     }
 
-    const room = rooms.find(r => r.id === roomId);
-    const dateKey = date.toDateString();
-    const timeKey = `${time}`;
-
-    // 규칙: 모든 홀에서 23:00 이후만 승인 필요 + (새날B, 광개A는 기본 승인필요)
-    const hour = parseInt(time.split(':')[0], 10);
-    const isLateNight = hour >= 23;
-    const needsApproval = (room?.needsApproval ?? false) || isLateNight;
-
+    const dateKey = date.toDateString(); const timeKey = `${time}`;
     const newReservation = {
       studentId: userInfo.studentId,
       name: userInfo.name,
@@ -152,35 +175,28 @@ export default function Home() {
     }));
   };
 
-  // 예약 취소
+  // 취소
   const cancelReservation = (roomId: string, date: Date, time: string) => {
-    const dateKey = date.toDateString();
-    const timeKey = `${time}`;
-
+    const dateKey = date.toDateString(); const timeKey = `${time}`;
     setReservations((prev: any) => {
-      const newReservations = { ...prev };
-      if (newReservations[roomId] && newReservations[roomId][dateKey]) {
-        delete newReservations[roomId][dateKey][timeKey];
-        if (Object.keys(newReservations[roomId][dateKey]).length === 0) delete newReservations[roomId][dateKey];
-        if (Object.keys(newReservations[roomId]).length === 0) delete newReservations[roomId];
+      const next = { ...prev };
+      if (next[roomId] && next[roomId][dateKey]) {
+        delete next[roomId][dateKey][timeKey];
+        if (Object.keys(next[roomId][dateKey]).length === 0) delete next[roomId][dateKey];
+        if (Object.keys(next[roomId]).length === 0) delete next[roomId];
       }
-      return newReservations;
+      return next;
     });
   };
-
-  // 모달
   const openCancelModal = (roomId: string, date: Date, time: string, reservation: any) => {
-    setCancelTarget({ roomId, date, time, reservation });
-    setShowCancelModal(true);
+    setCancelTarget({ roomId, date, time, reservation }); setShowCancelModal(true);
   };
 
   // 화면들
   const renderMainScreen = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-4">
-          세종댄스스페이스
-        </h1>
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-4">세종댄스스페이스</h1>
         <p className="text-lg text-gray-700 mb-6">실용무용과 연습실 예약 시스템</p>
 
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 max-w-md">
@@ -195,36 +211,20 @@ export default function Home() {
             <p className="text-red-600 font-medium">• ⚠️ 연습실 사용을 안할 경우, 반드시 캔슬바랍니다</p>
           </div>
 
-          <div className="mt-4 flex items-center">
-            <input
-              type="checkbox"
-              id="agreement"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="mr-3 w-4 h-4 text-blue-600 rounded"
-            />
-            <label htmlFor="agreement" className="text-sm text-gray-700">
-              위 내용을 확인했으며, 시설 파손 및 청소에 대한 책임을 동의합니다
-            </label>
-          </div>
+          <label className="mt-4 flex items-center gap-3 text-sm text-gray-700">
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="w-4 h-4" />
+            위 내용을 확인했고, 시설 파손/청소/이용수칙에 동의합니다.
+          </label>
         </div>
 
-        {agreed && (
-          <>
-            <button
-              onClick={() => setCurrentScreen(INDEX_RANKING)}
-              className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-3 rounded-full text-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 mb-4"
-            >
-              <Trophy className="inline mr-2" size={20} />
-              세종연습왕 TOP10 보기
-            </button>
-
-            <div className="animate-pulse text-purple-500 opacity-70 flex items-center justify-center">
-              <span className="mr-2">오른쪽으로 스와이프하세요</span>
-              <ChevronRight className="animate-bounce" size={20} />
-            </div>
-          </>
-        )}
+        <button
+          onClick={() => setAgreed(true)}
+          disabled={!agreed}
+          className={`px-8 py-3 rounded-full text-lg font-semibold ${agreed ? 'bg-purple-500 text-white hover:bg-purple-600' : 'bg-gray-300 text-white cursor-not-allowed'}`}
+          title={agreed ? '' : '동의 체크 후 이용 가능합니다'}
+        >
+          시작하기
+        </button>
       </div>
     </div>
   );
@@ -237,24 +237,12 @@ export default function Home() {
           <h2 className="text-3xl font-bold text-purple-800 mb-2">세종연습왕 TOP 10</h2>
           <p className="text-gray-600">이번 달 연습실 사용시간 랭킹</p>
         </div>
-
         <div className="space-y-3">
           {topUsers.map((user, index) => (
-            <div
-              key={user.rank}
-              className={`bg-white rounded-xl p-4 shadow-md flex items-center ${
-                index < 3 ? 'ring-2 ring-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50' : ''
-              }`}
-            >
+            <div key={user.rank} className={`bg-white rounded-xl p-4 shadow-md flex items-center ${index < 3 ? 'ring-2 ring-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50' : ''}`}>
               <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg mr-4 ${
-                index === 0 ? 'bg-yellow-500 text-white' :
-                index === 1 ? 'bg-gray-400 text-white' :
-                index === 2 ? 'bg-amber-600 text-white' :
-                'bg-purple-100 text-purple-800'
-              }`}>
-                {user.rank}
-              </div>
-
+                index === 0 ? 'bg-yellow-500 text-white' : index === 1 ? 'bg-gray-400 text-white' :
+                index === 2 ? 'bg-amber-600 text-white' : 'bg-purple-100 text-purple-800'}`}>{user.rank}</div>
               <div className="flex-1">
                 <div className="flex justify-between items-start">
                   <div>
@@ -267,14 +255,7 @@ export default function Home() {
                   </div>
                 </div>
               </div>
-
-              {index < 3 && (
-                <Trophy className={`ml-2 ${
-                  index === 0 ? 'text-yellow-500' :
-                  index === 1 ? 'text-gray-400' :
-                  'text-amber-600'
-                }`} size={24} />
-              )}
+              {index < 3 && <Trophy className={`ml-2 ${index === 0 ? 'text-yellow-500' : index === 1 ? 'text-gray-400' : 'text-amber-600'}`} size={24} />}
             </div>
           ))}
         </div>
@@ -283,71 +264,40 @@ export default function Home() {
   );
 
   const renderRoomScreen = (room: any) => (
-    <div className={`min-h-screen p-4 ${
-      room.type === 'approval' ? 'bg-gradient-to-br from-orange-50 to-red-50' : 'bg-gradient-to-br from-blue-50 to-purple-50'
-    }`}>
+    <div className={`min-h-screen p-4 ${room.type === 'approval' ? 'bg-gradient-to-br from-orange-50 to-red-50' : 'bg-gradient-to-br from-blue-50 to-purple-50'}`}>
       <div className="max-w-4xl mx-auto">
         <div className={`rounded-2xl shadow-lg p-6 mb-6 ${room.type === 'approval' ? 'bg-white border-2 border-orange-200' : 'bg-white'}`}>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className={`text-2xl font-bold ${room.type === 'approval' ? 'text-orange-800' : 'text-gray-800'}`}>{room.name}</h2>
               <p className="text-sm text-gray-600 flex items-center">
-                {room.needsApproval ? (
-                  <><AlertCircle className="mr-1 text-orange-500" size={16} />승인 필요</>
-                ) : (
-                  <><CheckCircle className="mr-1 text-green-500" size={16} />즉시 사용 가능</>
-                )}
+                {room.needsApproval ? (<><AlertCircle className="mr-1 text-orange-500" size={16} />승인 필요</>) : (<><CheckCircle className="mr-1 text-green-500" size={16} />즉시 사용 가능</>)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-sm text-gray-500">{formatDate(selectedDate)}</p>
-            </div>
+            <div className="text-right"><p className="text-sm text-gray-500">{formatDate(selectedDate)}</p></div>
           </div>
 
           {/* 캘린더 */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
-              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded">
-                <ChevronLeft size={20} />
-              </button>
-              <h3 className="text-lg font-semibold">
-                {selectedDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}
-              </h3>
-              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1))} className="p-2 hover:bg-gray-100 rounded">
-                <ChevronRight size={20} />
-              </button>
+              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
+              <h3 className="text-lg font-semibold">{selectedDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}</h3>
+              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronRight size={20} /></button>
             </div>
-
-            <div className="grid grid-cols-7 gap-2 mb-4">
-              {['일','월','화','수','목','금','토'].map(day => (
-                <div key={day} className="text-center text-sm font-medium text-gray-500 p-2">{day}</div>
-              ))}
-            </div>
-
+            <div className="grid grid-cols-7 gap-2 mb-4">{['일','월','화','수','목','금','토'].map(day => (<div key={day} className="text-center text-sm font-medium text-gray-500 p-2">{day}</div>))}</div>
             <div className="grid grid-cols-7 gap-2">
-              {getDaysInMonth(selectedDate).map((date, index) => (
-                <button
-                  key={index}
-                  onClick={() => date && setSelectedDate(date)}
-                  className={`p-2 text-sm rounded-lg ${
-                    !date ? 'invisible'
-                      : date.toDateString() === selectedDate.toDateString()
-                        ? 'bg-purple-500 text-white'
-                        : 'hover:bg-purple-100 text-gray-700'
-                  }`}
-                  disabled={!date}
-                >
+              {getDaysInMonth(selectedDate).map((date, i) => (
+                <button key={i} onClick={() => date && setSelectedDate(date)} className={`p-2 text-sm rounded-lg ${
+                  !date ? 'invisible' : date.toDateString() === selectedDate.toDateString() ? 'bg-purple-500 text-white' : 'hover:bg-purple-100 text-gray-700'}`} disabled={!date}>
                   {date?.getDate()}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 시간대 선택 */}
+          {/* 시간 선택 */}
           <div>
-            <h4 className="text-lg font-semibold mb-4 flex items-center">
-              <Clock className="mr-2" size={20} />시간 선택
-            </h4>
+            <h4 className="text-lg font-semibold mb-4 flex items-center"><Clock className="mr-2" size={20} />시간 선택</h4>
             <div className="grid grid-cols-4 gap-3">
               {timeSlots.map(time => {
                 const reservation = getReservationStatus(room.id, selectedDate, time);
@@ -358,6 +308,7 @@ export default function Home() {
                   <button
                     key={time}
                     onClick={() => {
+                      if (!agreed) return;
                       if (reservation) {
                         if (reservation.studentId === userInfo.studentId && reservation.name === userInfo.name) {
                           openCancelModal(room.id, selectedDate, time, reservation);
@@ -370,14 +321,14 @@ export default function Home() {
                       reservation
                         ? reservation.status === 'approved'
                           ? reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                            ? 'bg-blue-500 text-white cursor-pointer hover:bg-blue-600 ring-2 ring-blue-300'
+                            ? 'bg-blue-500 text-white hover:bg-blue-600 ring-2 ring-blue-300'
                             : 'bg-blue-500 text-white cursor-not-allowed'
                           : room.type === 'approval'
                           ? reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                            ? 'bg-orange-400 text-white cursor-pointer hover:bg-orange-500 ring-2 ring-orange-300'
+                            ? 'bg-orange-400 text-white hover:bg-orange-500 ring-2 ring-orange-300'
                             : 'bg-orange-400 text-white cursor-not-allowed'
                           : reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                          ? 'bg-yellow-400 text-white cursor-pointer hover:bg-yellow-500 ring-2 ring-yellow-300'
+                          ? 'bg-yellow-400 text-white hover:bg-yellow-500 ring-2 ring-yellow-300'
                           : 'bg-yellow-400 text-white cursor-not-allowed'
                         : isLateNight || room.needsApproval
                         ? room.needsApproval
@@ -385,26 +336,18 @@ export default function Home() {
                           : 'bg-red-100 border-2 border-red-400 text-red-700 hover:bg-red-200'
                         : 'bg-green-100 border-2 border-green-400 text-green-700 hover:bg-green-200'
                     }`}
-                    disabled={reservation && !(reservation.studentId === userInfo.studentId && reservation.name === userInfo.name)}
+                    disabled={!agreed || (reservation && !(reservation.studentId === userInfo.studentId && reservation.name === userInfo.name))}
                   >
                     <div>{time}</div>
                     {reservation && (
                       <div className="text-xs mt-1">
-                        {reservation.status === 'approved' ? (
-                          <CheckCircle size={12} className="inline mr-1" />
-                        ) : (
-                          <AlertCircle size={12} className="inline mr-1" />
-                        )}
+                        {reservation.status === 'approved' ? (<CheckCircle size={12} className="inline mr-1" />) : (<AlertCircle size={12} className="inline mr-1" />)}
                         {reservation.name}
-                        {reservation.studentId === userInfo.studentId && reservation.name === userInfo.name && (
-                          <div className="text-xs mt-1 font-bold">클릭하여 취소</div>
-                        )}
+                        {reservation.studentId === userInfo.studentId && reservation.name === userInfo.name && (<div className="text-xs mt-1 font-bold">클릭하여 취소</div>)}
                       </div>
                     )}
                     {!reservation && (isLateNight || room.needsApproval) && (
-                      <div className="text-xs mt-1">
-                        {room.needsApproval ? '승인필요' : '23:00 이후 승인필요'}
-                      </div>
+                      <div className="text-xs mt-1">{room.needsApproval ? '승인필요' : '23:00 이후 승인필요'}</div>
                     )}
                   </button>
                 );
@@ -416,22 +359,25 @@ export default function Home() {
     </div>
   );
 
-  // 내 예약 현황: 이름만으로 검색 가능
+  // 내 예약 현황: 이름 또는 학번으로 검색(둘 중 하나만 입력해도 됨)
   const [nameQuery, setNameQuery] = useState('');
+  const [idQuery, setIdQuery] = useState('');
   const renderMyReservations = () => {
-    const mine: Array<{roomId:string; roomName:string; date: string; time: string; status: string; name: string}> = [];
+    const mine: Array<{roomId:string; roomName:string; date: string; time: string; status: string; name: string; studentId: string}> = [];
     Object.entries(reservations).forEach(([roomId, byDate]: any) => {
       Object.entries(byDate).forEach(([dateKey, byTime]: any) => {
         Object.entries(byTime).forEach(([timeKey, value]: any) => {
-          // 이름 필터 (대소문자 무시, 공백 허용)
-          if (nameQuery.trim().length > 0) {
-            if (!String(value.name).toLowerCase().includes(nameQuery.trim().toLowerCase())) return;
+          const matchesByName = nameQuery.trim() ? String(value.name).toLowerCase().includes(nameQuery.trim().toLowerCase()) : false;
+          const matchesById = idQuery.trim() ? String(value.studentId).toLowerCase().includes(idQuery.trim().toLowerCase()) : false;
+
+          if (nameQuery.trim() || idQuery.trim()) {
+            if (!(matchesByName || matchesById)) return;
           } else {
-            // 이름 검색어가 비어 있으면, 기존 방식대로 "로그인된 본인" 정보로 제한
             if (!(value.studentId === userInfo.studentId && value.name === userInfo.name)) return;
           }
+
           const roomName = rooms.find(r => r.id === roomId)?.name ?? roomId;
-          mine.push({ roomId, roomName, date: dateKey, time: timeKey, status: value.status, name: value.name });
+          mine.push({ roomId, roomName, date: dateKey, time: timeKey, status: value.status, name: value.name, studentId: value.studentId });
         });
       });
     });
@@ -441,74 +387,48 @@ export default function Home() {
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold mb-4">내 예약 현황</h2>
 
-          {/* 이름 검색 */}
+          {/* 검색 박스 */}
           <div className="bg-white p-4 rounded-xl shadow mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">신청자 이름으로 검색</label>
-            <input
-              type="text"
-              placeholder="이름을 입력하세요 (예: 김민수)"
-              className="w-full p-3 border rounded-lg"
-              value={nameQuery}
-              onChange={(e) => setNameQuery(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              ※ 이름을 입력하면 해당 이름의 모든 예약이 표시됩니다. 입력하지 않으면 현재 입력된 학번/이름/전공 정보와 일치하는 예약만 보여요.
-            </p>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">이름으로 검색</label>
+                <input type="text" placeholder="예: 김민수" className="w-full p-3 border rounded-lg" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">학번으로 검색</label>
+                <input type="text" placeholder="예: 20210001" className="w-full p-3 border rounded-lg" value={idQuery} onChange={(e) => setIdQuery(e.target.value)} />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">※ 둘 중 하나만 입력해도 됩니다. 둘 다 비우면 현재 입력된 학번/이름/전공 정보와 일치하는 예약만 보여요.</p>
           </div>
 
-          {/* 사용자 기본 정보 입력 박스 (이름 검색을 쓰지 않는 경우에 대비) */}
-          {nameQuery.trim().length === 0 && (!userInfo.studentId || !userInfo.name) && (
+          {/* 사용자 기본정보 입력(검색어 없을 때만 노출) */}
+          {!(nameQuery.trim() || idQuery.trim()) && (!userInfo.studentId || !userInfo.name) && (
             <div className="bg-white p-6 rounded-xl shadow mb-4">
-              <p className="text-gray-700 mb-3">이름 검색 대신, 예약 시 사용한 <b>학번/이름/세부전공</b>을 입력하세요.</p>
+              <p className="text-gray-700 mb-3">검색 대신, 예약 시 사용한 <b>학번/이름/세부전공</b>을 입력하세요.</p>
               <div className="grid grid-cols-1 gap-3">
-                <input
-                  type="text"
-                  placeholder="학번"
-                  className="p-3 border rounded-lg"
-                  value={userInfo.studentId}
-                  onChange={(e) => setUserInfo({...userInfo, studentId: e.target.value})}
-                />
-                <input
-                  type="text"
-                  placeholder="이름"
-                  className="p-3 border rounded-lg"
-                  value={userInfo.name}
-                  onChange={(e) => setUserInfo({...userInfo, name: e.target.value})}
-                />
-                <input
-                  type="text"
-                  placeholder="세부전공"
-                  className="p-3 border rounded-lg"
-                  value={userInfo.major}
-                  onChange={(e) => setUserInfo({...userInfo, major: e.target.value})}
-                />
+                <input type="text" placeholder="학번" className="p-3 border rounded-lg" value={userInfo.studentId} onChange={(e) => setUserInfo({ ...userInfo, studentId: e.target.value })} />
+                <input type="text" placeholder="이름" className="p-3 border rounded-lg" value={userInfo.name} onChange={(e) => setUserInfo({ ...userInfo, name: e.target.value })} />
+                <input type="text" placeholder="세부전공" className="p-3 border rounded-lg" value={userInfo.major} onChange={(e) => setUserInfo({ ...userInfo, major: e.target.value })} />
               </div>
             </div>
           )}
 
           {mine.length === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow">
-              <p className="text-gray-600">표시할 예약이 없습니다.</p>
-            </div>
+            <div className="bg-white p-6 rounded-xl shadow"><p className="text-gray-600">표시할 예약이 없습니다.</p></div>
           ) : (
             <div className="space-y-3">
-              {mine
-                .sort((a, b) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime())
+              {mine.sort((a, b) => new Date(a.date + ' ' + a.time).getTime() - new Date(b.date + ' ' + b.time).getTime())
                 .map((item, idx) => (
                 <div key={idx} className="bg-white p-4 rounded-xl shadow flex items-center justify-between">
                   <div>
                     <div className="text-sm text-gray-500">{item.roomName}</div>
                     <div className="text-lg font-semibold text-purple-700">{item.date} {item.time}</div>
-                    <div className="text-xs text-gray-500">
-                      {item.status === 'approved' ? '승인됨' : '승인대기'} · 신청자 {item.name}
-                    </div>
+                    <div className="text-xs text-gray-500">{item.status === 'approved' ? '승인됨' : '승인대기'} · 신청자 {item.name} · 학번 {item.studentId}</div>
                   </div>
                   <button
                     className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600"
-                    onClick={() => {
-                      const d = new Date(item.date);
-                      cancelReservation(item.roomId, d, item.time);
-                    }}
+                    onClick={() => { const d = new Date(item.date); cancelReservation(item.roomId, d, item.time); }}
                   >
                     취소
                   </button>
@@ -521,53 +441,47 @@ export default function Home() {
     );
   };
 
+  // 사용자 정보 입력 모달 (시간 선택 후 표시)
   const renderUserForm = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl p-6 w-full max-w-md">
         <h3 className="text-xl font-bold mb-4 text-center">예약 정보 입력</h3>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">학번</label>
-            <input
-              type="text"
-              value={userInfo.studentId}
-              onChange={(e) => setUserInfo({...userInfo, studentId: e.target.value})}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              placeholder="예: 20210001"
-            />
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">학번</label>
+            <input type="text" value={userInfo.studentId} onChange={(e) => setUserInfo({ ...userInfo, studentId: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500" placeholder="예: 20210001" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">이름</label>
-            <input
-              type="text"
-              value={userInfo.name}
-              onChange={(e) => setUserInfo({...userInfo, name: e.target.value})}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              placeholder="이름을 입력하세요"
-            />
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">이름</label>
+            <input type="text" value={userInfo.name} onChange={(e) => setUserInfo({ ...userInfo, name: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500" placeholder="이름을 입력하세요" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">세부전공</label>
-            <input
-              type="text"
-              value={userInfo.major}
-              onChange={(e) => setUserInfo({...userInfo, major: e.target.value})}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              placeholder="예: 실용무용전공, K-POP댄스전공, 발레전공 등"
-            />
+          <div><label className="block text-sm font-medium text-gray-700 mb-2">세부전공</label>
+            <input type="text" value={userInfo.major} onChange={(e) => setUserInfo({ ...userInfo, major: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500" placeholder="예: 실용무용전공, K-POP댄스전공, 발레전공 등" />
           </div>
         </div>
         <div className="flex space-x-3 mt-6">
-          <button
-            onClick={() => setShowUserForm(false)}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-          >
-            취소
-          </button>
+          <button onClick={() => setShowUserForm(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">취소</button>
           <button
             onClick={() => {
               if (userInfo.studentId && userInfo.name && userInfo.major && selectedRoom && selectedTime) {
-                makeReservation(selectedRoom, selectedDate, selectedTime);
+                const hour = parseInt(selectedTime.split(':')[0], 10);
+                const isLateNight = hour >= 23;
+                const room = rooms.find(r => r.id === selectedRoom);
+                const needsApproval = (room?.needsApproval ?? false) || isLateNight;
+
+                const dateKey = selectedDate.toDateString(); const timeKey = `${selectedTime}`;
+                const newReservation = {
+                  studentId: userInfo.studentId, name: userInfo.name, major: userInfo.major,
+                  status: needsApproval ? 'pending' : 'approved', timestamp: new Date().toISOString()
+                };
+                setReservations((prev: any) => ({
+                  ...prev,
+                  [selectedRoom]: {
+                    ...prev[selectedRoom as string],
+                    [dateKey]: {
+                      ...prev[selectedRoom as string]?.[dateKey],
+                      [timeKey]: newReservation
+                    }
+                  }
+                }));
                 setShowUserForm(false);
               }
             }}
@@ -582,7 +496,7 @@ export default function Home() {
   );
 
   const renderCancelModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl p-6 w-full max-w-md">
         <h3 className="text-xl font-bold mb-4 text-center text-red-600">예약 취소</h3>
         {cancelTarget && (
@@ -592,33 +506,23 @@ export default function Home() {
               <p className="font-semibold">{rooms.find(r => r.id === cancelTarget.roomId)?.name}</p>
               <p className="text-sm text-gray-600">{formatDate(cancelTarget.date)}</p>
               <p className="text-lg font-bold text-purple-600">{cancelTarget.time}</p>
-              <p className="text-sm mt-2">
-                {cancelTarget.reservation.name} ({cancelTarget.reservation.studentId})
-              </p>
+              <p className="text-sm mt-2">{cancelTarget.reservation.name} ({cancelTarget.reservation.studentId})</p>
               <p className="text-xs text-gray-500">{cancelTarget.reservation.major}</p>
             </div>
-            <p className="text-red-600 text-sm mt-4">⚠️ 다른 학생들을 위해 사용하지 않는 시간은 미리 취소해주세요</p>
+            <p className="text-red-600 text-sm mt-4">⚠️ 사용하지 않는 시간은 미리 취소해주세요</p>
           </div>
         )}
         <div className="flex space-x-3">
-          <button
-            onClick={() => setShowCancelModal(false)}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-          >
-            취소
-          </button>
+          <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">취소</button>
           <button
             onClick={() => {
               if (cancelTarget) {
                 cancelReservation(cancelTarget.roomId, cancelTarget.date, cancelTarget.time);
-                setShowCancelModal(false);
-                setCancelTarget(null);
+                setShowCancelModal(false); setCancelTarget(null);
               }
             }}
             className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-          >
-            예약 취소
-          </button>
+          >예약 취소</button>
         </div>
       </div>
     </div>
@@ -626,13 +530,12 @@ export default function Home() {
 
   const renderCurrentScreen = () => {
     if (currentScreen === INDEX_MAIN) return renderMainScreen();
+    if (!agreed) return renderMainScreen();
     if (currentScreen === INDEX_RANKING) return renderRankingScreen();
     if (currentScreen === INDEX_MY_RESERVATIONS) return renderMyReservations();
-
-    // 실룸 인덱스 매핑 (빈 페이지 방지)
     const idxInRooms = currentScreen - INDEX_ROOMS_START;
     const theRoom = roomScreens[idxInRooms];
-    if (!theRoom) return renderMainScreen(); // 안전장치
+    if (!theRoom) return renderMainScreen();
     return renderRoomScreen(theRoom);
   };
 
@@ -644,55 +547,36 @@ export default function Home() {
       onTouchEnd={onTouchEnd}
       ref={containerRef}
     >
-      {/* 햄버거 메뉴 */}
+      {/* 햄버거 메뉴: 동의 전에는 버튼만 비활성 */}
       <div className="fixed top-4 left-4 z-50">
         <button
-          onClick={() => setShowMenu(!showMenu)}
-          className="bg-white/90 p-3 rounded-lg shadow-lg"
+          onClick={() => agreed && setShowMenu(!showMenu)}
+          className={`p-3 rounded-lg shadow-lg ${agreed ? 'bg-white/90' : 'bg-gray-300 cursor-not-allowed'}`}
           aria-label="메뉴 열기"
+          title={agreed ? '' : '동의 체크 후 이용 가능합니다'}
         >
           <Menu size={20} />
         </button>
 
-        {showMenu && (
-          <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border">
+        {showMenu && agreed && (
+          <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border text-gray-900 subpixel-antialiased">
             <h3 className="font-bold text-gray-800 mb-4">메뉴</h3>
 
-            <button
-              className="w-full text-left p-3 hover:bg-purple-50 rounded-lg"
-              onClick={() => { setCurrentScreen(INDEX_MAIN); setShowMenu(false); }}
-            >
-              홈
-            </button>
-
-            <button
-              className="w-full text-left p-3 hover:bg-purple-50 rounded-lg"
-              onClick={() => { setCurrentScreen(INDEX_RANKING); setShowMenu(false); }}
-            >
-              세종연습왕 TOP10
-            </button>
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MAIN); setShowMenu(false); }}>홈</button>
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_RANKING); setShowMenu(false); }}>세종연습왕 TOP10</button>
 
             <div className="border-t my-2" />
-
             {roomScreens.map((r, i) => {
               const idx = INDEX_ROOMS_START + i;
               return (
-                <button
-                  key={r.id}
-                  className="w-full text-left p-3 hover:bg-purple-50 rounded-lg"
-                  onClick={() => { setCurrentScreen(idx); setShowMenu(false); }}
-                >
+                <button key={r.id} className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(idx); setShowMenu(false); }}>
                   {r.name} {r.needsApproval && <span className="text-xs text-orange-600 ml-1">(승인필요)</span>}
                 </button>
               );
             })}
 
             <div className="border-t my-2" />
-
-            <button
-              className="w-full text-left p-3 hover:bg-purple-50 rounded-lg"
-              onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}
-            >
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>
               내 예약 현황
             </button>
           </nav>
@@ -701,27 +585,15 @@ export default function Home() {
 
       {renderCurrentScreen()}
 
-      {/* 네비게이션 인디케이터 (빈 페이지 제거 후 정확한 총 페이지 수 표시) */}
-      {currentScreen > 0 && (
+      {/* 하단 인디케이터: 동의 전에는 숨김 */}
+      {agreed && currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 shadow-lg">
           <div className="flex items-center space-x-2">
-            <button
-              onClick={() => handleSwipe('right')}
-              disabled={currentScreen === 0}
-              className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50"
-              aria-label="이전"
-            >
+            <button onClick={() => handleSwipe('right')} disabled={currentScreen === 0} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="이전">
               <ChevronLeft size={20} />
             </button>
-            <span className="text-sm font-medium text-gray-700">
-              {currentScreen} / {MAX_INDEX}
-            </span>
-            <button
-              onClick={() => handleSwipe('left')}
-              disabled={currentScreen === MAX_INDEX}
-              className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50"
-              aria-label="다음"
-            >
+            <span className="text-sm font-medium text-gray-700">{currentScreen} / {MAX_INDEX}</span>
+            <button onClick={() => handleSwipe('left')} disabled={currentScreen === MAX_INDEX} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="다음">
               <ChevronRight size={20} />
             </button>
           </div>
