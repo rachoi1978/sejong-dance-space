@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import clientPromise from "../../../lib/mongodb";
+import { getDb } from "../../../lib/mongodb";
 
 type Doc = {
   _id?: any;
@@ -30,8 +30,8 @@ export async function GET(req: Request) {
   const roomId = searchParams.get("roomId")?.trim();
   const status = searchParams.get("status")?.trim();
 
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB);
+  const db = await getDb();
+  
   const q: any = {};
   if (name && studentId) {
     q.$or = [
@@ -75,8 +75,8 @@ export async function POST(req: Request) {
     updatedAt: new Date().toISOString(),
   };
 
-  const client = await clientPromise;
-  const db = client.db(process.env.MONGODB_DB);
+  const db = await getDb();
+  
 
   await db.collection("reservations").createIndex(
     { roomId: 1, dateKey: 1, timeKey: 1 },
