@@ -1,32 +1,32 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  // 동의 게이트
-  const [agreed, setAgreed] = useState(false);
+  const router = useRouter();
 
-  // 화면 상태
+  const [agreed, setAgreed] = useState(false);
   const [currentScreen, setCurrentScreen] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 날짜/예약 상태
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [reservations, setReservations] = useState<any>({});
   const [userInfo, setUserInfo] = useState({ studentId: '', name: '', major: '' });
 
-  // 예약 플로우
   const [showUserForm, setShowUserForm] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
 
-  // 메뉴
   const [showMenu, setShowMenu] = useState(false);
 
-  // 로컬 지속화(localStorage)
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminError, setAdminError] = useState('');
+
   const LS_KEYS = {
     reservations: 'sds_reservations_v1',
     userInfo: 'sds_userInfo_v1',
@@ -44,55 +44,34 @@ export default function Home() {
     } catch {}
   }, []);
 
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {}
-  }, [reservations]);
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {}
-  }, [userInfo]);
+  useEffect(() => { try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
+  useEffect(() => { try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {} }, [userInfo]);
   useEffect(() => {
     try { localStorage.setItem(LS_KEYS.agreed, String(agreed)); } catch {}
-    if (!agreed) {
-      setCurrentScreen(0);
-      setShowMenu(false);
-    }
+    if (!agreed) { setCurrentScreen(0); setShowMenu(false); }
   }, [agreed]);
 
-  // 연습실 설정
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
-
-    // 승인 불필요
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
     { id: 'saenalD', name: '새날관 D', type: 'open', needsApproval: false },
     { id: 'saenalE', name: '새날관 E', type: 'open', needsApproval: false },
     { id: 'gwangB',  name: '광개토관 B', type: 'open', needsApproval: false },
     { id: 'gwangC',  name: '광개토관 C', type: 'open', needsApproval: false },
-
-    // 기본 승인 필요
     { id: 'saenalB',  name: '새날관 B', type: 'approval', needsApproval: true },
     { id: 'gwangA',   name: '광개토관 A', type: 'approval', needsApproval: true },
-
-    // 유지
     { id: 'daeyangHall', name: '대양AI 다목적홀', type: 'approval', needsApproval: true },
   ];
   const roomScreens = rooms.filter(r => r.type !== 'ranking');
 
-  // 스크린 인덱스
   const INDEX_MAIN = 0;
   const INDEX_RANKING = 1;
   const INDEX_ROOMS_START = 2;
   const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + roomScreens.length;
   const MAX_INDEX = INDEX_MY_RESERVATIONS;
 
-  // 시간대
-  const timeSlots = [
-    '07:00','08:00','09:00','10:00','11:00','12:00',
-    '13:00','14:00','15:00','16:00','17:00','18:00',
-    '19:00','20:00','21:00','22:00','23:00'
-  ];
+  const timeSlots = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
 
-  // TOP10 샘플
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -106,7 +85,6 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
-  // 스와이프(동의 전에는 무시)
   const handleSwipe = (direction: 'left' | 'right') => {
     if (!agreed) return;
     if (direction === 'left' && currentScreen < MAX_INDEX) setCurrentScreen(currentScreen + 1);
@@ -123,7 +101,6 @@ export default function Home() {
     if (distance < -50) handleSwipe('right');
   };
 
-  // 날짜 헬퍼
   const formatDate = (date: Date) => date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear(), month = date.getMonth();
@@ -133,14 +110,11 @@ export default function Home() {
     return days;
   };
 
-  // 상태 조회
   const getReservationStatus = (roomId: string, date: Date, time: string) => {
     const dateKey = date.toDateString(); const timeKey = `${time}`;
     return reservations[roomId]?.[dateKey]?.[timeKey] || null;
   };
 
-  // 예약: “시간 먼저 선택 → 정보 입력”
-  // 승인 규칙: 23:00 이후는 모두 승인 필요 + (새날B/광개A/대양홀 기본 승인필요)
   const makeReservation = (roomId: string, date: Date, time: string) => {
     const hour = parseInt(time.split(':')[0], 10);
     const isLateNight = hour >= 23;
@@ -175,7 +149,6 @@ export default function Home() {
     }));
   };
 
-  // 취소
   const cancelReservation = (roomId: string, date: Date, time: string) => {
     const dateKey = date.toDateString(); const timeKey = `${time}`;
     setReservations((prev: any) => {
@@ -192,7 +165,6 @@ export default function Home() {
     setCancelTarget({ roomId, date, time, reservation }); setShowCancelModal(true);
   };
 
-  // 화면들
   const renderMainScreen = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
       <div className="text-center mb-8">
@@ -212,17 +184,11 @@ export default function Home() {
           </div>
 
           <label className="mt-4 flex items-center gap-3 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              className="w-4 h-4"
-            />
+            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="w-4 h-4" />
             위 내용을 확인했고, 시설 파손/청소/이용수칙에 동의합니다.
           </label>
         </div>
 
-        {/* 시작하기 버튼 제거 → 동의 시 스와이프 안내만 표시 */}
         {agreed && (
           <div className="animate-pulse text-purple-600 opacity-90 flex items-center justify-center">
             <span className="mr-2">오른쪽으로 스와이프하세요</span>
@@ -281,7 +247,6 @@ export default function Home() {
             <div className="text-right"><p className="text-sm text-gray-500">{formatDate(selectedDate)}</p></div>
           </div>
 
-          {/* 캘린더 */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
@@ -299,7 +264,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 시간 선택 */}
           <div>
             <h4 className="text-lg font-semibold mb-4 flex items-center"><Clock className="mr-2" size={20} />시간 선택</h4>
             <div className="grid grid-cols-4 gap-3">
@@ -363,7 +327,6 @@ export default function Home() {
     </div>
   );
 
-  // 내 예약 현황: 이름 또는 학번으로 검색(둘 중 하나만 입력해도 됨)
   const [nameQuery, setNameQuery] = useState('');
   const [idQuery, setIdQuery] = useState('');
   const renderMyReservations = () => {
@@ -391,7 +354,6 @@ export default function Home() {
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold mb-4">내 예약 현황</h2>
 
-          {/* 검색 박스 */}
           <div className="bg-white p-4 rounded-xl shadow mb-4">
             <div className="grid md:grid-cols-2 gap-3">
               <div>
@@ -406,7 +368,6 @@ export default function Home() {
             <p className="text-xs text-gray-500 mt-2">※ 둘 중 하나만 입력해도 됩니다. 둘 다 비우면 현재 입력된 학번/이름/전공 정보와 일치하는 예약만 보여요.</p>
           </div>
 
-          {/* 사용자 기본정보 입력(검색어 없을 때만 노출) */}
           {!(nameQuery.trim() || idQuery.trim()) && (!userInfo.studentId || !userInfo.name) && (
             <div className="bg-white p-6 rounded-xl shadow mb-4">
               <p className="text-gray-700 mb-3">검색 대신, 예약 시 사용한 <b>학번/이름/세부전공</b>을 입력하세요.</p>
@@ -445,7 +406,6 @@ export default function Home() {
     );
   };
 
-  // 사용자 정보 입력 모달 (시간 선택 후 표시)
   const renderUserForm = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl p-6 w-full max-w-md">
@@ -551,7 +511,6 @@ export default function Home() {
       onTouchEnd={onTouchEnd}
       ref={containerRef}
     >
-      {/* 햄버거 메뉴: 아이콘은 항상 진하게, 동의 전에는 클릭만 비활성 */}
       <div className="fixed top-4 left-4 z-50">
         <button
           onClick={() => agreed && setShowMenu(!showMenu)}
@@ -566,10 +525,8 @@ export default function Home() {
         {showMenu && agreed && (
           <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border text-gray-900 subpixel-antialiased">
             <h3 className="font-bold text-gray-800 mb-4">메뉴</h3>
-
             <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MAIN); setShowMenu(false); }}>홈</button>
             <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_RANKING); setShowMenu(false); }}>세종연습왕 TOP10</button>
-
             <div className="border-t my-2" />
             {roomScreens.map((r, i) => {
               const idx = INDEX_ROOMS_START + i;
@@ -579,7 +536,6 @@ export default function Home() {
                 </button>
               );
             })}
-
             <div className="border-t my-2" />
             <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>
               내 예약 현황
@@ -588,9 +544,19 @@ export default function Home() {
         )}
       </div>
 
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={() => setShowAdminLogin(true)}
+          className="p-3 rounded-lg shadow-lg bg-white text-gray-900"
+          aria-label="관리자 로그인"
+          title="관리자"
+        >
+          <Shield size={20} />
+        </button>
+      </div>
+
       {renderCurrentScreen()}
 
-      {/* 하단 인디케이터: 동의 전에는 숨김 */}
       {agreed && currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 shadow-lg">
           <div className="flex items-center space-x-2">
@@ -607,6 +573,46 @@ export default function Home() {
 
       {showUserForm && renderUserForm()}
       {showCancelModal && renderCancelModal()}
+
+      {showAdminLogin && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4 text-center">관리자 로그인</h3>
+            <input
+              type="email"
+              className="w-full p-3 border rounded-lg mb-3"
+              placeholder="관리자 이메일"
+              value={adminEmail}
+              onChange={(e)=>setAdminEmail(e.target.value)}
+            />
+            {adminError && <div className="text-red-600 text-sm mb-3">{adminError}</div>}
+            <div className="flex gap-2">
+              <button onClick={()=>setShowAdminLogin(false)} className="flex-1 px-4 py-2 border rounded-lg">취소</button>
+              <button
+                onClick={async ()=>{
+                  setAdminError('');
+                  const r = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: adminEmail })
+                  });
+                  if (r.ok) {
+                    setShowAdminLogin(false);
+                    router.push('/admin');
+                  } else {
+                    const j = await r.json().catch(()=>({}));
+                    setAdminError(j?.error || '로그인 실패');
+                  }
+                }}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg"
+                disabled={!adminEmail}
+              >
+                들어가기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
