@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield, LogIn, Edit3, Save } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
+
+export const dynamic = 'force-dynamic';
 
 async function readJSON<T>(res: Response, fallback: T): Promise<T> {
   const t = await res.text();
@@ -10,7 +12,7 @@ async function readJSON<T>(res: Response, fallback: T): Promise<T> {
   try { return JSON.parse(t) as T; } catch { return fallback; }
 }
 
-export default function Home() {
+function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -58,9 +60,7 @@ export default function Home() {
 
   useEffect(() => {
     const scr = searchParams.get('screen');
-    if (loggedIn && scr === 'ranking') {
-      setCurrentScreen(1);
-    }
+    if (loggedIn && scr === 'ranking') setCurrentScreen(1);
   }, [loggedIn, searchParams]);
 
   const rooms = [
@@ -426,7 +426,8 @@ export default function Home() {
             <div className="bg-white p-6 rounded-xl shadow"><p className="text-gray-700">표시할 예약이 없습니다.</p></div>
           ) : (
             <div className="space-y-3">
-              {mine.sort((a, b) => new Date(a.dateKey + ' ' + a.timeKey).getTime() - new Date(b.dateKey + ' ' + b.dateKey).getTime())
+              {mine
+                .sort((a, b) => new Date(a.dateKey + ' ' + a.timeKey).getTime() - new Date(b.dateKey + ' ' + b.timeKey).getTime())
                 .map((item: any) => (
                 <div key={item._id} className="bg-white p-4 rounded-xl shadow flex items-center justify-between">
                   <div>
@@ -449,40 +450,6 @@ export default function Home() {
       </div>
     );
   };
-
-  const renderEditModal = () => (
-    <div className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 ${editItem ? '' : 'hidden'}`}>
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
-        <h3 className="text-xl font-bold mb-4 text-center">예약 수정</h3>
-        <div className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-900 mb-2">세부전공(선택)</label>
-            <input type="text" value={editMajor} onChange={(e)=>setEditMajor(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="전공" />
-          </div>
-          <div><label className="block text-sm font-medium text-gray-900 mb-2">사용인원(선택)</label>
-            <input type="number" min={1} value={editCapacity} onChange={(e)=>setEditCapacity(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 1" />
-          </div>
-        </div>
-        <div className="flex space-x-3 mt-6">
-          <button onClick={()=>setEditItem(null)} className="flex-1 px-4 py-2 border rounded-lg">닫기</button>
-          <button
-            onClick={async ()=>{
-              if (!editItem) return;
-              const payload: any = {};
-              if (editMajor !== undefined) payload.major = editMajor;
-              if (editCapacity) payload.capacity = Math.max(1, Number(editCapacity) || 1);
-              const r = await fetch(`/api/reservations/${editItem._id}`, {
-                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-              });
-              await r.text();
-              await loadServerMine();
-              setEditItem(null);
-            }}
-            className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-1"
-          ><Save size={16}/>저장</button>
-        </div>
-      </div>
-    </div>
-  );
 
   useEffect(() => { if (currentScreen === INDEX_MY_RESERVATIONS && loggedIn) loadServerMine(); }, [currentScreen, loggedIn]);
 
@@ -518,7 +485,7 @@ export default function Home() {
         {showMenu && loggedIn && (
           <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border text-gray-900 subpixel-antialiased">
             <h3 className="font-bold text-gray-900 mb-4">메뉴</h3>
-            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_RANKING); setShowMenu(false); }}>세종연습왕 TOP10</button>
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(1); setShowMenu(false); }}>세종연습왕 TOP10</button>
             <div className="border-t my-2" />
             {roomScreens.map((r, i) => {
               const idx = INDEX_ROOMS_START + i;
@@ -563,8 +530,7 @@ export default function Home() {
         </div>
       )}
 
-      {renderEditModal()}
-
+      {/* 관리자 로그인 모달 */}
       {showAdminLogin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
@@ -587,5 +553,13 @@ export default function Home() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-gray-700">로딩…</div>}>
+      <HomeInner />
+    </Suspense>
   );
 }
