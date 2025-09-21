@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Row = {
@@ -15,6 +15,7 @@ export default function AdminPage() {
   const router = useRouter();
   const [items, setItems] = useState<Row[]>([]);
   const [q, setQ] = useState({ text: "", status: "" });
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -36,6 +37,11 @@ export default function AdminPage() {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(load, 7000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [q.text, q.status]);
 
   const setStatus = async (id: string, status: Row["status"]) => {
     await fetch(`/api/reservations/${id}`, {
@@ -81,6 +87,7 @@ export default function AdminPage() {
         </select>
         <button onClick={load} className="p-3 rounded-lg bg-purple-600 text-white">검색</button>
         <button onClick={() => { setQ({ text: "", status: "" }); load(); }} className="p-3 rounded-lg border">초기화</button>
+        <div className="text-sm text-gray-500 flex items-center">실시간(7초 간격) 갱신</div>
       </div>
 
       <section className="mb-8">

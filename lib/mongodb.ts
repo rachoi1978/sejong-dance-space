@@ -8,9 +8,7 @@ export async function getMongoClient(): Promise<MongoClient> {
   if (connecting) return connecting;
 
   const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    throw new Error("Missing MONGODB_URI env");
-  }
+  if (!uri) throw new Error("Missing MONGODB_URI env");
 
   const c = new MongoClient(uri, {
     serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
