@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield, LogIn, Edit3, Save } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 async function readJSON<T>(res: Response, fallback: T): Promise<T> {
   const t = await res.text();
@@ -12,22 +12,16 @@ async function readJSON<T>(res: Response, fallback: T): Promise<T> {
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
-  // --- login state (name + studentId only) ---
-  const [userInfo, setUserInfo] = useState<{ studentId: string; name: string }>(
-    { studentId: '', name: '' }
-  );
+  const [agreed, setAgreed] = useState(false);
+  const [userInfo, setUserInfo] = useState<{ studentId: string; name: string }>({ studentId: '', name: '' });
   const loggedIn = Boolean(userInfo.studentId && userInfo.name);
-  const [showLogin, setShowLogin] = useState(false);
-  const [loginName, setLoginName] = useState('');
-  const [loginSid, setLoginSid] = useState('');
 
-  // --- UI/navigation ---
   const [currentScreen, setCurrentScreen] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const [showMenu, setShowMenu] = useState(false);
 
-  // --- reservation data (local mirror for quick UI) ---
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [reservations, setReservations] = useState<any>({});
   const [serverItems, setServerItems] = useState<any[]>([]);
@@ -35,33 +29,40 @@ export default function Home() {
   const [editCapacity, setEditCapacity] = useState<string>('');
   const [editMajor, setEditMajor] = useState<string>('');
 
-  // --- admin login (as before) ---
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [adminError, setAdminError] = useState('');
 
-  // localStorage keys
-  const LS_KEYS = {
+  const LS = {
     reservations: 'sds_reservations_v4',
     userInfo: 'sds_userInfo_v4',
+    agreed: 'sds_agreed_v4',
   };
 
-  // load persisted
   useEffect(() => {
     try {
-      const u = localStorage.getItem(LS_KEYS.userInfo);
+      const u = localStorage.getItem(LS.userInfo);
       if (u) {
         const parsed = JSON.parse(u);
         setUserInfo({ studentId: parsed.studentId || '', name: parsed.name || '' });
       }
-      const r = localStorage.getItem(LS_KEYS.reservations);
+      const r = localStorage.getItem(LS.reservations);
       if (r) setReservations(JSON.parse(r));
+      const a = localStorage.getItem(LS.agreed);
+      if (a) setAgreed(a === 'true');
     } catch {}
   }, []);
-  useEffect(() => { try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {} }, [userInfo]);
-  useEffect(() => { try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
+  useEffect(()=>{ try { localStorage.setItem(LS.userInfo, JSON.stringify(userInfo)); } catch {} }, [userInfo]);
+  useEffect(()=>{ try { localStorage.setItem(LS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
+  useEffect(()=>{ try { localStorage.setItem(LS.agreed, String(agreed)); } catch {} }, [agreed]);
 
-  // rooms
+  useEffect(() => {
+    const scr = searchParams.get('screen');
+    if (loggedIn && scr === 'ranking') {
+      setCurrentScreen(1);
+    }
+  }, [loggedIn, searchParams]);
+
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
@@ -75,7 +76,6 @@ export default function Home() {
   ];
   const roomScreens = rooms.filter(r => r.type !== 'ranking');
 
-  // index map
   const INDEX_HOME = 0;
   const INDEX_RANKING = 1;
   const INDEX_ROOMS_START = 2;
@@ -84,7 +84,6 @@ export default function Home() {
 
   const timeSlots = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
 
-  // ranking dummy
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -98,7 +97,6 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
-  // swipe (enabled only after login)
   const handleSwipe = (direction: 'left' | 'right') => {
     if (!loggedIn) return;
     if (direction === 'left' && currentScreen < MAX_INDEX) setCurrentScreen(currentScreen + 1);
@@ -114,8 +112,6 @@ export default function Home() {
     if (distance > 50) handleSwipe('left');
     if (distance < -50) handleSwipe('right');
   };
-
-  // keyboard nav for desktop
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!loggedIn) return;
@@ -126,11 +122,8 @@ export default function Home() {
     return () => window.removeEventListener('keydown', onKey);
   }, [loggedIn, currentScreen]);
 
-  // utils
-  const formatDate = (date: Date) => date.toDateString(); // keep toDateString for consistent key
-  const formatDateHuman = (date: Date) =>
-    date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
-
+  const formatKey = (date: Date) => date.toDateString();
+  const formatHuman = (date: Date) => date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear(), month = date.getMonth();
     const firstDay = new Date(year, month, 1), lastDay = new Date(year, month + 1, 0);
@@ -138,34 +131,29 @@ export default function Home() {
     for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, month, d));
     return days;
   };
-
   const getReservationStatus = (roomId: string, date: Date, time: string) => {
-    const dateKey = formatDate(date); const timeKey = `${time}`;
-    return reservations[roomId]?.[dateKey]?.[timeKey] || null;
+    const dk = formatKey(date), tk = `${time}`;
+    return reservations[roomId]?.[dk]?.[tk] || null;
   };
 
-  // fetch my reservations from server
   async function loadServerMine(q?: string) {
     if (!loggedIn) return setServerItems([]);
     const url = new URL("/api/reservations", window.location.origin);
-    const search = q || userInfo.name || userInfo.studentId;
     if (userInfo.name) url.searchParams.set("name", userInfo.name);
     if (userInfo.studentId) url.searchParams.set("studentId", userInfo.studentId);
-    if (search) url.searchParams.set("name", search);
+    if (q) url.searchParams.set("name", q);
     const r = await fetch(url.toString(), { cache: "no-store" });
     const rows = await readJSON<any[]>(r, []);
     setServerItems(rows || []);
   }
   useEffect(() => { if (loggedIn) loadServerMine(); }, [loggedIn]);
 
-  // set of my reserved dateKeys for calendar dots
   const myDateKeys = useMemo(() => {
     const s = new Set<string>();
     for (const it of serverItems) s.add(it.dateKey);
     return s;
   }, [serverItems]);
 
-  // reserve immediately by clicking time (requires login)
   async function persistReservation(payload: {
     roomId: string; roomName: string; dateKey: string; timeKey: string;
     studentId: string; name: string; major?: string; capacity?: number;
@@ -184,9 +172,9 @@ export default function Home() {
   }
 
   const makeReservation = async (roomId: string, date: Date, time: string) => {
-    if (!loggedIn) { setShowLogin(true); return; }
+    if (!loggedIn) { router.push('/login'); return; }
     const room = rooms.find(r => r.id === roomId);
-    const dateKey = formatDate(date); const timeKey = `${time}`;
+    const dateKey = formatKey(date); const timeKey = `${time}`;
     const res = await persistReservation({
       roomId, roomName: room?.name || roomId, dateKey, timeKey,
       studentId: userInfo.studentId.trim(), name: userInfo.name.trim(),
@@ -194,49 +182,70 @@ export default function Home() {
     });
     if (!res) return;
     const status = res.status || 'pending';
-    const newReservation = {
+    const newRes = {
       studentId: userInfo.studentId.trim(), name: userInfo.name.trim(),
       major: '', capacity: 1, status, timestamp: new Date().toISOString()
     };
     setReservations((prev: any) => ({
       ...prev,
-      [roomId]: { ...(prev[roomId]||{}), [dateKey]: { ...(prev[roomId]?.[dateKey]||{}), [timeKey]: newReservation } }
+      [roomId]: { ...(prev[roomId]||{}), [dateKey]: { ...(prev[roomId]?.[dateKey]||{}), [timeKey]: newRes } }
     }));
-    loadServerMine(); // refresh my list for calendar dots
+    loadServerMine();
   };
 
   const cancelReservationLocalOnly = (roomId: string, date: Date, time: string) => {
-    const dateKey = formatDate(date); const timeKey = `${time}`;
+    const dk = formatKey(date); const tk = `${time}`;
     setReservations((prev: any) => {
       const next = { ...prev };
-      if (next[roomId] && next[roomId][dateKey]) {
-        delete next[roomId][dateKey][timeKey];
-        if (Object.keys(next[roomId][dateKey]).length === 0) delete next[roomId][dateKey];
+      if (next[roomId] && next[roomId][dk]) {
+        delete next[roomId][dk][tk];
+        if (Object.keys(next[roomId][dk]).length === 0) delete next[roomId][dk];
         if (Object.keys(next[roomId]).length === 0) delete next[roomId];
       }
       return next;
     });
   };
 
-  // --- Screens ---
   const renderHome = () => (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow p-6 text-gray-900">
-        <h1 className="text-3xl font-bold text-center mb-2">세종댄스스페이스</h1>
-        <p className="text-center text-gray-600 mb-6">실용무용과 연습실 예약 시스템</p>
-        <div className="space-y-2 text-sm text-gray-700">
-          <p>• 로그인(이름, 학번) 후 TOP10으로 이동합니다.</p>
-          <p>• 예약 페이지에서는 날짜와 시간만 클릭하면 즉시 예약됩니다.</p>
-          <p>• 23:00 이후 또는 일부 홀(새날관 B, 광개토관 A)은 승인 절차가 필요합니다.</p>
-          <p className="text-red-600">• 노쇼 금지, 미사용 시 반드시 취소</p>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-4">
+          세종댄스스페이스
+        </h1>
+        <p className="text-lg text-gray-700 mb-6">실용무용과 연습실 예약 시스템</p>
+
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 max-w-md text-gray-900">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">📋 사용 방법 및 주의사항</h3>
+          <div className="text-sm text-gray-700 text-left space-y-2">
+            <p>• 학번, 이름을 정확히 입력해주세요</p>
+            <p>• 예약 시간을 준수해주세요</p>
+            <p>• 사용 후 반드시 청소해주세요</p>
+            <p>• 시설 파손 시 즉시 신고해주세요</p>
+            <p>• 23:00 이후(또는 새날관 B, 광개토관 A)는 승인 절차가 필요합니다</p>
+            <p className="text-red-600 font-medium">• ⚠️ 노쇼는 다음 연습실 사용에 제약이 있을 수 있습니다</p>
+            <p className="text-red-600 font-medium">• ⚠️ 사용을 안할 경우, 반드시 캔슬바랍니다</p>
+          </div>
+
+          <label className="mt-4 flex items-center gap-3 text-sm text-gray-900">
+            <input
+              type="checkbox"
+              className="w-4 h-4"
+              checked={agreed}
+              onChange={(e)=>setAgreed(e.target.checked)}
+            />
+            위 내용을 확인했고, 시설 파손/청소/이용수칙에 동의합니다.
+          </label>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowLogin(true)}
-          className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-3 text-white font-semibold hover:bg-purple-700"
-        >
-          <LogIn size={18}/> 로그인
-        </button>
+
+        {agreed && (
+          <button
+            type="button"
+            onClick={()=>router.push('/login')}
+            className="inline-flex items-center rounded-full bg-purple-600 px-5 py-2.5 text-white font-semibold hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-400"
+          >
+            <LogIn className="mr-2" size={18}/> 로그인
+          </button>
+        )}
       </div>
     </div>
   );
@@ -286,10 +295,9 @@ export default function Home() {
                 {room.needsApproval ? (<><AlertCircle className="mr-1 text-orange-500" size={16} />승인 필요</>) : (<><CheckCircle className="mr-1 text-green-500" size={16} />즉시 사용 가능</>)}
               </p>
             </div>
-            <div className="text-right"><p className="text-sm text-gray-700">{new Date(formatDate(selectedDate)).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
+            <div className="text-right"><p className="text-sm text-gray-700">{formatHuman(selectedDate)}</p></div>
           </div>
 
-          {/* Calendar */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 text-gray-900">
               <button type="button" onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
@@ -303,7 +311,7 @@ export default function Home() {
 
             <div className="grid grid-cols-7 gap-2">
               {getDaysInMonth(selectedDate).map((date, i) => {
-                const dk = date ? formatDate(date) : '';
+                const dk = date ? formatKey(date) : '';
                 const mine = date && myDateKeys.has(dk);
                 return (
                   <button
@@ -328,7 +336,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Time slots: click to reserve */}
           <div>
             <h4 className="text-lg font-semibold mb-4 flex items-center text-gray-900"><Clock className="mr-2" size={20} />시간 선택 (클릭하면 바로 예약)</h4>
             <div className="grid grid-cols-4 gap-3">
@@ -336,7 +343,6 @@ export default function Home() {
                 const reservation = getReservationStatus(room.id, selectedDate, time);
                 const hour = parseInt(time.split(':')[0], 10);
                 const isLateNight = hour >= 23;
-
                 const mine = reservation && reservation.studentId === userInfo.studentId && reservation.name === userInfo.name;
 
                 return (
@@ -344,11 +350,11 @@ export default function Home() {
                     type="button"
                     key={time}
                     onClick={() => {
-                      if (!loggedIn) { setShowLogin(true); return; }
+                      if (!loggedIn) { router.push('/login'); return; }
                       if (reservation) {
                         if (mine) {
-                          // local cancel only (server cancel API not yet implemented)
-                          cancelReservationLocalOnly(room.id, selectedDate, time);
+                          const d = new Date(formatKey(selectedDate));
+                          cancelReservationLocalOnly(room.id, d, time);
                           loadServerMine();
                         }
                       } else {
@@ -391,7 +397,6 @@ export default function Home() {
     </div>
   );
 
-  // My Reservations page (shows date & time)
   const [nameQuery, setNameQuery] = useState('');
   const [idQuery, setIdQuery] = useState('');
   const renderMy = () => {
@@ -421,7 +426,7 @@ export default function Home() {
             <div className="bg-white p-6 rounded-xl shadow"><p className="text-gray-700">표시할 예약이 없습니다.</p></div>
           ) : (
             <div className="space-y-3">
-              {mine.sort((a, b) => new Date(a.dateKey + ' ' + a.timeKey).getTime() - new Date(b.dateKey + ' ' + b.timeKey).getTime())
+              {mine.sort((a, b) => new Date(a.dateKey + ' ' + a.timeKey).getTime() - new Date(b.dateKey + ' ' + b.dateKey).getTime())
                 .map((item: any) => (
                 <div key={item._id} className="bg-white p-4 rounded-xl shadow flex items-center justify-between">
                   <div>
@@ -432,7 +437,6 @@ export default function Home() {
                   <div className="flex gap-2">
                     <button className="px-3 py-2 text-sm rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center gap-1" onClick={() => { setEditItem(item); setEditCapacity(String(item.capacity||'1')); setEditMajor(String(item.major||'')); }}><Edit3 size={16}/>수정</button>
                     <button className="px-3 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600" onClick={() => {
-                      // local-only cancel UI
                       const d = new Date(item.dateKey);
                       cancelReservationLocalOnly(item.roomId, d, item.timeKey);
                     }}>취소</button>
@@ -446,7 +450,6 @@ export default function Home() {
     );
   };
 
-  // edit modal (optional fields)
   const renderEditModal = () => (
     <div className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 ${editItem ? '' : 'hidden'}`}>
       <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
@@ -481,14 +484,11 @@ export default function Home() {
     </div>
   );
 
-  // choose screen
-  useEffect(() => {
-    if (currentScreen === INDEX_MY_RESERVATIONS) loadServerMine();
-  }, [currentScreen]);
+  useEffect(() => { if (currentScreen === INDEX_MY_RESERVATIONS && loggedIn) loadServerMine(); }, [currentScreen, loggedIn]);
 
   const renderCurrent = () => {
     if (!loggedIn) return renderHome();
-    if (currentScreen === INDEX_HOME) return renderRanking(); // after login, INDEX_HOME acts as TOP10
+    if (currentScreen === INDEX_HOME) return renderRanking();
     if (currentScreen === INDEX_RANKING) return renderRanking();
     if (currentScreen === INDEX_MY_RESERVATIONS) return renderMy();
     const idxInRooms = currentScreen - INDEX_ROOMS_START;
@@ -506,7 +506,6 @@ export default function Home() {
       ref={containerRef}
       tabIndex={0}
     >
-      {/* Left: menu */}
       <div className="fixed top-4 left-4 z-50">
         <button
           onClick={() => loggedIn && setShowMenu(!showMenu)}
@@ -530,15 +529,16 @@ export default function Home() {
               );
             })}
             <div className="border-t my-2" />
-            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>내 예약 현황</button>
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>
+              내 예약 현황
+            </button>
           </nav>
         )}
       </div>
 
-      {/* Right: user login + admin */}
       <div className="fixed top-4 right-4 z-50 flex gap-2">
         {!loggedIn && (
-          <button onClick={() => setShowLogin(true)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="로그인">
+          <button onClick={() => router.push('/login')} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="로그인">
             <LogIn size={20} />
           </button>
         )}
@@ -563,42 +563,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Login modal */}
-      {showLogin && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
-            <h3 className="text-xl font-bold mb-4 text-center">로그인</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">이름</label>
-                <input type="text" value={loginName} onChange={(e)=>setLoginName(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 김민수" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">학번</label>
-                <input type="text" value={loginSid} onChange={(e)=>setLoginSid(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 20210001" />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button onClick={()=>setShowLogin(false)} className="flex-1 px-4 py-2 border rounded-lg">취소</button>
-              <button
-                onClick={()=>{
-                  if (!loginName.trim() || !loginSid.trim()) return;
-                  setUserInfo({ name: loginName.trim(), studentId: loginSid.trim() });
-                  setShowLogin(false);
-                  setCurrentScreen(INDEX_RANKING);
-                  loadServerMine();
-                }}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              >로그인</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit modal */}
       {renderEditModal()}
 
-      {/* Admin login modal (unchanged behavior) */}
       {showAdminLogin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
