@@ -212,19 +212,23 @@ export default function Home() {
           </div>
 
           <label className="mt-4 flex items-center gap-3 text-sm text-gray-700">
-            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="w-4 h-4" />
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="w-4 h-4"
+            />
             위 내용을 확인했고, 시설 파손/청소/이용수칙에 동의합니다.
           </label>
         </div>
 
-        <button
-          onClick={() => setAgreed(true)}
-          disabled={!agreed}
-          className={`px-8 py-3 rounded-full text-lg font-semibold ${agreed ? 'bg-purple-500 text-white hover:bg-purple-600' : 'bg-gray-300 text-white cursor-not-allowed'}`}
-          title={agreed ? '' : '동의 체크 후 이용 가능합니다'}
-        >
-          시작하기
-        </button>
+        {/* 시작하기 버튼 제거 → 동의 시 스와이프 안내만 표시 */}
+        {agreed && (
+          <div className="animate-pulse text-purple-600 opacity-90 flex items-center justify-center">
+            <span className="mr-2">오른쪽으로 스와이프하세요</span>
+            <ChevronRight className="animate-bounce" size={22} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -547,11 +551,12 @@ export default function Home() {
       onTouchEnd={onTouchEnd}
       ref={containerRef}
     >
-      {/* 햄버거 메뉴: 동의 전에는 버튼만 비활성 */}
+      {/* 햄버거 메뉴: 아이콘은 항상 진하게, 동의 전에는 클릭만 비활성 */}
       <div className="fixed top-4 left-4 z-50">
         <button
           onClick={() => agreed && setShowMenu(!showMenu)}
-          className={`p-3 rounded-lg shadow-lg ${agreed ? 'bg-white/90' : 'bg-gray-300 cursor-not-allowed'}`}
+          className="p-3 rounded-lg shadow-lg bg-white text-gray-900"
+          aria-disabled={!agreed}
           aria-label="메뉴 열기"
           title={agreed ? '' : '동의 체크 후 이용 가능합니다'}
         >
