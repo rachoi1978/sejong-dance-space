@@ -1,3 +1,6 @@
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from "next/server";
 import { getDb } from "../../../lib/mongodb";
 
@@ -31,7 +34,6 @@ export async function GET(req: Request) {
   const status = searchParams.get("status")?.trim();
 
   const db = await getDb();
-  
   const q: any = {};
   if (name && studentId) {
     q.$or = [
@@ -76,7 +78,6 @@ export async function POST(req: Request) {
   };
 
   const db = await getDb();
-  
 
   await db.collection("reservations").createIndex(
     { roomId: 1, dateKey: 1, timeKey: 1 },
