@@ -14,9 +14,14 @@ export default function Home() {
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [agreed, setAgreed] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  
+  // 로그인 관련 상태 추가
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginForm, setLoginForm] = useState({ studentId: '', name: '' });
+  
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 연습실 설정
+  // 연습실 설정 (기존과 동일)
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
@@ -29,14 +34,7 @@ export default function Home() {
     { id: 'gwangA', name: '광개토관 A', type: 'approval', needsApproval: true }
   ];
 
-  // 시간대 설정
-  const timeSlots = [
-    '07:00', '08:00', '09:00', '10:00', '11:00', '12:00',
-    '13:00', '14:00', '15:00', '16:00', '17:00', '18:00',
-    '19:00', '20:00', '21:00', '22:00', '23:00'
-  ];
-
-  // TOP 10 랭킹 데이터
+  // TOP 10 랭킹 데이터 (기존과 동일)
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -50,14 +48,30 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
-  // 메뉴 카테고리
+  // 메뉴 카테고리 (기존과 동일)
   const menuCategories = [
     { id: 'instant', name: '즉시 사용 가능', rooms: ['saenalC', 'saenalD', 'saenalE', 'gwangB', 'gwangC'] },
     { id: 'approval', name: '승인 필요', rooms: ['daeyangHall', 'saenalB', 'gwangA'] },
     { id: 'my-reservations', name: '내 예약 현황', rooms: [] }
   ];
 
-  // 햄버거 메뉴 렌더링
+  // 로그인 처리 함수 - 학번과 이름을 받아서 유저 정보에 저장하고 랭킹 페이지로 이동
+  const handleLogin = () => {
+    if (loginForm.studentId.trim() && loginForm.name.trim()) {
+      // 로그인 정보를 userInfo 상태에 저장 (major는 나중에 예약할 때 입력)
+      setUserInfo({
+        studentId: loginForm.studentId.trim(),
+        name: loginForm.name.trim(),
+        major: '' // 예약 시에 입력받도록 빈 값으로 설정
+      });
+      
+      // 로그인 화면 숨기고 랭킹 페이지로 이동
+      setShowLogin(false);
+      setCurrentScreen(1); // 랭킹 페이지로 이동
+    }
+  };
+
+  // 햄버거 메뉴 렌더링 (기존과 동일)
   const renderHamburgerMenu = () => (
     <div className="fixed top-4 left-4 z-50">
       <button
@@ -83,9 +97,9 @@ export default function Home() {
                 if (category.id === 'my-reservations') {
                   setCurrentScreen(-1);
                 } else if (category.id === 'instant') {
-                  setCurrentScreen(2); // 새날관 C
+                  setCurrentScreen(2);
                 } else if (category.id === 'approval') {
-                  setCurrentScreen(7); // 대양AI 다목적홀
+                  setCurrentScreen(7);
                 }
               }}
               className="w-full text-left p-3 hover:bg-purple-50 rounded-lg transition-colors mb-2 flex items-center justify-between"
@@ -111,6 +125,7 @@ export default function Home() {
     </div>
   );
 
+  // 수정된 메인 화면 - 동의 체크박스와 로그인 버튼만 표시
   const renderMainScreen = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
       <div className="text-center mb-8">
@@ -145,25 +160,76 @@ export default function Home() {
           </div>
         </div>
 
+        {/* 동의 체크 후 로그인 버튼 표시 */}
         {agreed && (
-          <>
-            <button
-              onClick={() => setCurrentScreen(1)}
-              className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-3 rounded-full text-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 mb-4"
-            >
-              🏆 세종연습왕 TOP10 보기
-            </button>
-            
-            <div className="animate-pulse text-purple-500 opacity-70 flex items-center justify-center">
-              <span className="mr-2">왼쪽 상단 메뉴를 클릭하세요</span>
-              <span className="text-2xl animate-bounce">☰</span>
-            </div>
-          </>
+          <button
+            onClick={() => setShowLogin(true)}
+            className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-8 py-3 rounded-full text-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105 mb-4 flex items-center justify-center"
+          >
+            <span className="mr-2">👤</span>
+            로그인
+          </button>
         )}
       </div>
     </div>
   );
 
+  // 새로 추가된 로그인 페이지
+  const renderLoginScreen = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
+        <h1 className="text-2xl font-bold text-center mb-2 text-gray-800">로그인</h1>
+        <p className="text-center text-gray-600 mb-6">학번과 이름을 입력해주세요</p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">학번</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500" 
+              placeholder="예: 20210001" 
+              value={loginForm.studentId} 
+              onChange={(e) => setLoginForm({...loginForm, studentId: e.target.value})} 
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">이름</label>
+            <input 
+              type="text" 
+              className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-purple-500 focus:border-purple-500" 
+              placeholder="예: 김민수" 
+              value={loginForm.name} 
+              onChange={(e) => setLoginForm({...loginForm, name: e.target.value})} 
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-6">
+          <button 
+            type="button" 
+            onClick={() => setShowLogin(false)} 
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={!loginForm.studentId.trim() || !loginForm.name.trim()}
+            onClick={handleLogin}
+            className={`flex-1 px-4 py-2 rounded-lg ${
+              loginForm.studentId.trim() && loginForm.name.trim() 
+                ? 'bg-purple-600 text-white hover:bg-purple-700' 
+                : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            로그인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // 랭킹 화면 (기존과 동일)
   const renderRankingScreen = () => (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-100 p-4">
       <div className="max-w-4xl mx-auto pt-20">
@@ -171,6 +237,15 @@ export default function Home() {
           <div className="text-6xl mb-4">🏆</div>
           <h2 className="text-3xl font-bold text-purple-800 mb-2">세종연습왕 TOP 10</h2>
           <p className="text-gray-600">이번 달 연습실 사용시간 랭킹</p>
+          
+          {/* 로그인된 사용자 정보 표시 */}
+          {userInfo.name && (
+            <div className="mt-4 p-3 bg-white rounded-lg shadow-md">
+              <p className="text-sm text-gray-600">
+                안녕하세요, <span className="font-semibold text-purple-600">{userInfo.name}</span>님! ({userInfo.studentId})
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -217,7 +292,14 @@ export default function Home() {
     </div>
   );
 
+  // 화면 렌더링 로직 - 로그인 화면 추가
   const renderCurrentScreen = () => {
+    // 로그인 화면이 활성화된 경우 로그인 화면 표시
+    if (showLogin) {
+      return renderLoginScreen();
+    }
+    
+    // 기존 화면 로직
     if (currentScreen === 0) return renderMainScreen();
     if (currentScreen === 1) return renderRankingScreen();
     if (currentScreen === -1) {
@@ -241,12 +323,12 @@ export default function Home() {
       );
     }
     
+    // 다른 화면들 (연습실 등)
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4 flex items-center justify-center">
         <div className="text-center bg-white rounded-2xl p-8 shadow-lg max-w-md">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">연습실 예약 시스템</h2>
           <p className="text-gray-600 mb-4">연습실 예약 기능이 곧 추가됩니다!</p>
-          <p className="text-sm text-gray-500 mb-6">현재는 햄버거 메뉴와 기본 화면 전환만 가능합니다.</p>
           <div className="flex space-x-4">
             <button
               onClick={() => setCurrentScreen(0)}
