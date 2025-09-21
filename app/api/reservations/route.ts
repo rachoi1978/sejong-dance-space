@@ -12,7 +12,7 @@ type Doc = {
   timeKey: string;
   studentId: string;
   name: string;
-  major: string;
+  major?: string;
   capacity: number;
   status: "pending" | "approved" | "rejected" | "canceled";
   createdAt: string;
@@ -61,22 +61,26 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const required = ["roomId","roomName","dateKey","timeKey","studentId","name","major","capacity"];
+
+    const required = ["roomId","roomName","dateKey","timeKey","studentId","name"];
     for (const k of required) {
-      if (body[k] === undefined || body[k] === null || body[k] === "") {
+      if (body[k] === undefined || body[k] === null || String(body[k]).trim() === "") {
         return NextResponse.json({ error: `Missing ${k}` }, { status: 400 });
       }
     }
+
+    const capacity = Math.max(1, parseInt(String(body.capacity ?? "1"), 10) || 1);
+    const major = typeof body.major === "string" ? body.major : "";
 
     const doc: Doc = {
       roomId: String(body.roomId),
       roomName: String(body.roomName),
       dateKey: String(body.dateKey),
       timeKey: String(body.timeKey),
-      studentId: String(body.studentId),
-      name: String(body.name),
-      major: String(body.major),
-      capacity: Math.max(1, parseInt(String(body.capacity), 10) || 1),
+      studentId: String(body.studentId).trim(),
+      name: String(body.name).trim(),
+      major,
+      capacity,
       status: needsApproval(String(body.roomId), String(body.timeKey)) ? "pending" : "approved",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

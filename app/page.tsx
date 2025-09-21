@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield, Edit3, Save } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield, LogIn, Edit3, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 async function readJSON<T>(res: Response, fallback: T): Promise<T> {
@@ -13,51 +13,55 @@ async function readJSON<T>(res: Response, fallback: T): Promise<T> {
 export default function Home() {
   const router = useRouter();
 
-  const [agreed, setAgreed] = useState(false);
+  // --- login state (name + studentId only) ---
+  const [userInfo, setUserInfo] = useState<{ studentId: string; name: string }>(
+    { studentId: '', name: '' }
+  );
+  const loggedIn = Boolean(userInfo.studentId && userInfo.name);
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginName, setLoginName] = useState('');
+  const [loginSid, setLoginSid] = useState('');
+
+  // --- UI/navigation ---
   const [currentScreen, setCurrentScreen] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [reservations, setReservations] = useState<any>({});
-  const [userInfo, setUserInfo] = useState({ studentId: '', name: '', major: '', capacity: '' as any });
-
-  const [showUserForm, setShowUserForm] = useState(false);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelTarget, setCancelTarget] = useState<any>(null);
-
   const [showMenu, setShowMenu] = useState(false);
 
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminError, setAdminError] = useState('');
-
+  // --- reservation data (local mirror for quick UI) ---
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [reservations, setReservations] = useState<any>({});
   const [serverItems, setServerItems] = useState<any[]>([]);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [editCapacity, setEditCapacity] = useState<string>('');
   const [editMajor, setEditMajor] = useState<string>('');
 
+  // --- admin login (as before) ---
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminError, setAdminError] = useState('');
+
+  // localStorage keys
   const LS_KEYS = {
-    reservations: 'sds_reservations_v3',
-    userInfo: 'sds_userInfo_v3',
-    agreed: 'sds_agreed_v3',
+    reservations: 'sds_reservations_v4',
+    userInfo: 'sds_userInfo_v4',
   };
 
+  // load persisted
   useEffect(() => {
     try {
+      const u = localStorage.getItem(LS_KEYS.userInfo);
+      if (u) {
+        const parsed = JSON.parse(u);
+        setUserInfo({ studentId: parsed.studentId || '', name: parsed.name || '' });
+      }
       const r = localStorage.getItem(LS_KEYS.reservations);
       if (r) setReservations(JSON.parse(r));
-      const u = localStorage.getItem(LS_KEYS.userInfo);
-      if (u) setUserInfo(JSON.parse(u));
-      const a = localStorage.getItem(LS_KEYS.agreed);
-      if (a) setAgreed(a === 'true');
     } catch {}
   }, []);
-  useEffect(() => { try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
   useEffect(() => { try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {} }, [userInfo]);
-  useEffect(() => { try { localStorage.setItem(LS_KEYS.agreed, String(agreed)); } catch {} if (!agreed) { setCurrentScreen(0); setShowMenu(false); } }, [agreed]);
+  useEffect(() => { try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
 
+  // rooms
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
@@ -71,7 +75,8 @@ export default function Home() {
   ];
   const roomScreens = rooms.filter(r => r.type !== 'ranking');
 
-  const INDEX_MAIN = 0;
+  // index map
+  const INDEX_HOME = 0;
   const INDEX_RANKING = 1;
   const INDEX_ROOMS_START = 2;
   const INDEX_MY_RESERVATIONS = INDEX_ROOMS_START + roomScreens.length;
@@ -79,6 +84,7 @@ export default function Home() {
 
   const timeSlots = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
 
+  // ranking dummy
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
     { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
@@ -92,34 +98,39 @@ export default function Home() {
     { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
   ];
 
+  // swipe (enabled only after login)
   const handleSwipe = (direction: 'left' | 'right') => {
-    if (!agreed) return;
+    if (!loggedIn) return;
     if (direction === 'left' && currentScreen < MAX_INDEX) setCurrentScreen(currentScreen + 1);
     else if (direction === 'right' && currentScreen > 0) setCurrentScreen(currentScreen - 1);
   };
-
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { if (!agreed) return; setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
-  const onTouchMove = (e: React.TouchEvent) => { if (!agreed) return; setTouchEnd(e.targetTouches[0].clientX); };
+  const onTouchStart = (e: React.TouchEvent) => { if (!loggedIn) return; setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
+  const onTouchMove = (e: React.TouchEvent) => { if (!loggedIn) return; setTouchEnd(e.targetTouches[0].clientX); };
   const onTouchEnd = () => {
-    if (!agreed || !touchStart || !touchEnd) return;
+    if (!loggedIn || !touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
     if (distance > 50) handleSwipe('left');
     if (distance < -50) handleSwipe('right');
   };
 
+  // keyboard nav for desktop
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!agreed) return;
+      if (!loggedIn) return;
       if (e.key === 'ArrowRight') handleSwipe('left');
       if (e.key === 'ArrowLeft') handleSwipe('right');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [agreed, currentScreen]);
+  }, [loggedIn, currentScreen]);
 
-  const formatDate = (date: Date) => date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  // utils
+  const formatDate = (date: Date) => date.toDateString(); // keep toDateString for consistent key
+  const formatDateHuman = (date: Date) =>
+    date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear(), month = date.getMonth();
     const firstDay = new Date(year, month, 1), lastDay = new Date(year, month + 1, 0);
@@ -129,16 +140,40 @@ export default function Home() {
   };
 
   const getReservationStatus = (roomId: string, date: Date, time: string) => {
-    const dateKey = date.toDateString(); const timeKey = `${time}`;
+    const dateKey = formatDate(date); const timeKey = `${time}`;
     return reservations[roomId]?.[dateKey]?.[timeKey] || null;
   };
 
+  // fetch my reservations from server
+  async function loadServerMine(q?: string) {
+    if (!loggedIn) return setServerItems([]);
+    const url = new URL("/api/reservations", window.location.origin);
+    const search = q || userInfo.name || userInfo.studentId;
+    if (userInfo.name) url.searchParams.set("name", userInfo.name);
+    if (userInfo.studentId) url.searchParams.set("studentId", userInfo.studentId);
+    if (search) url.searchParams.set("name", search);
+    const r = await fetch(url.toString(), { cache: "no-store" });
+    const rows = await readJSON<any[]>(r, []);
+    setServerItems(rows || []);
+  }
+  useEffect(() => { if (loggedIn) loadServerMine(); }, [loggedIn]);
+
+  // set of my reserved dateKeys for calendar dots
+  const myDateKeys = useMemo(() => {
+    const s = new Set<string>();
+    for (const it of serverItems) s.add(it.dateKey);
+    return s;
+  }, [serverItems]);
+
+  // reserve immediately by clicking time (requires login)
   async function persistReservation(payload: {
     roomId: string; roomName: string; dateKey: string; timeKey: string;
-    studentId: string; name: string; major: string; capacity: number;
+    studentId: string; name: string; major?: string; capacity?: number;
   }) {
     try {
-      const r = await fetch("/api/reservations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const r = await fetch("/api/reservations", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      });
       const j = await readJSON<{ ok?: boolean; id?: string; status?: string; error?: string }>(r, {} as any);
       if (!r.ok || !j?.ok) throw new Error(j?.error || "예약 오류");
       return j;
@@ -149,32 +184,29 @@ export default function Home() {
   }
 
   const makeReservation = async (roomId: string, date: Date, time: string) => {
-    if (!userInfo.studentId.trim() || !userInfo.name.trim() || !userInfo.major.trim() || !(Number(userInfo.capacity) > 0)) {
-      setSelectedRoom(roomId); setSelectedTime(time); setShowUserForm(true);
-      return;
-    }
+    if (!loggedIn) { setShowLogin(true); return; }
     const room = rooms.find(r => r.id === roomId);
-    const dateKey = date.toDateString(); const timeKey = `${time}`;
+    const dateKey = formatDate(date); const timeKey = `${time}`;
     const res = await persistReservation({
       roomId, roomName: room?.name || roomId, dateKey, timeKey,
-      studentId: userInfo.studentId.trim(), name: userInfo.name.trim(), major: userInfo.major.trim(),
-      capacity: Math.max(1, Number(userInfo.capacity) || 1),
+      studentId: userInfo.studentId.trim(), name: userInfo.name.trim(),
+      capacity: 1
     });
     if (!res) return;
     const status = res.status || 'pending';
     const newReservation = {
-      studentId: userInfo.studentId.trim(), name: userInfo.name.trim(), major: userInfo.major.trim(),
-      capacity: Math.max(1, Number(userInfo.capacity) || 1), status,
-      timestamp: new Date().toISOString()
+      studentId: userInfo.studentId.trim(), name: userInfo.name.trim(),
+      major: '', capacity: 1, status, timestamp: new Date().toISOString()
     };
     setReservations((prev: any) => ({
       ...prev,
       [roomId]: { ...(prev[roomId]||{}), [dateKey]: { ...(prev[roomId]?.[dateKey]||{}), [timeKey]: newReservation } }
     }));
+    loadServerMine(); // refresh my list for calendar dots
   };
 
-  const cancelReservation = (roomId: string, date: Date, time: string) => {
-    const dateKey = date.toDateString(); const timeKey = `${time}`;
+  const cancelReservationLocalOnly = (roomId: string, date: Date, time: string) => {
+    const dateKey = formatDate(date); const timeKey = `${time}`;
     setReservations((prev: any) => {
       const next = { ...prev };
       if (next[roomId] && next[roomId][dateKey]) {
@@ -185,54 +217,31 @@ export default function Home() {
       return next;
     });
   };
-  const openCancelModal = (roomId: string, date: Date, time: string, reservation: any) => { setCancelTarget({ roomId, date, time, reservation }); setShowCancelModal(true); };
 
-  async function loadServerMine(text?: string) {
-    const url = new URL("/api/reservations", window.location.origin);
-    const name = text ?? userInfo.name;
-    const sid = text ?? userInfo.studentId;
-    if (name) url.searchParams.set("name", name);
-    if (sid) url.searchParams.set("studentId", sid);
-    const r = await fetch(url.toString(), { cache: "no-store" });
-    const rows = await readJSON<any[]>(r, []);
-    setServerItems(rows || []);
-  }
-
-  const renderMainScreen = () => (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
-      <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-4">세종댄스스페이스</h1>
-        <p className="text-lg text-gray-700 mb-6">실용무용과 연습실 예약 시스템</p>
-
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 max-w-md text-gray-900">
-          <h3 className="text-lg font-semibold mb-4">사용 방법 및 주의사항</h3>
-          <div className="text-sm text-gray-700 text-left space-y-2">
-            <p>• 학번, 이름, 세부전공, 사용인원을 정확히 입력해주세요</p>
-            <p>• 예약 시간을 준수해주세요</p>
-            <p>• 사용 후 반드시 청소해주세요</p>
-            <p>• 시설 파손 시 즉시 신고해주세요</p>
-            <p>• 23:00 이후 예약은 승인 절차가 필요합니다</p>
-            <p className="text-red-600 font-medium">• 노쇼는 다음 연습실 사용에 제약이 있을 수 있습니다</p>
-            <p className="text-red-600 font-medium">• 사용을 안할 경우, 반드시 캔슬바랍니다</p>
-          </div>
-
-          <label className="mt-4 flex items-center gap-3 text-sm text-gray-900">
-            <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="w-4 h-4" />
-            위 내용을 확인했고, 시설 파손/청소/이용수칙에 동의합니다.
-          </label>
+  // --- Screens ---
+  const renderHome = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-100 via-blue-50 to-purple-50 p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow p-6 text-gray-900">
+        <h1 className="text-3xl font-bold text-center mb-2">세종댄스스페이스</h1>
+        <p className="text-center text-gray-600 mb-6">실용무용과 연습실 예약 시스템</p>
+        <div className="space-y-2 text-sm text-gray-700">
+          <p>• 로그인(이름, 학번) 후 TOP10으로 이동합니다.</p>
+          <p>• 예약 페이지에서는 날짜와 시간만 클릭하면 즉시 예약됩니다.</p>
+          <p>• 23:00 이후 또는 일부 홀(새날관 B, 광개토관 A)은 승인 절차가 필요합니다.</p>
+          <p className="text-red-600">• 노쇼 금지, 미사용 시 반드시 취소</p>
         </div>
-
-        {agreed && (
-          <div className="animate-pulse text-purple-600 opacity-90 flex items-center justify-center">
-            <span className="mr-2">오른쪽으로 스와이프하거나 우측 화살표를 클릭하세요</span>
-            <ChevronRight className="animate-bounce" size={22} />
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => setShowLogin(true)}
+          className="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-3 text-white font-semibold hover:bg-purple-700"
+        >
+          <LogIn size={18}/> 로그인
+        </button>
       </div>
     </div>
   );
 
-  const renderRankingScreen = () => (
+  const renderRanking = () => (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 to-blue-100 p-4">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-6">
@@ -266,7 +275,7 @@ export default function Home() {
     </div>
   );
 
-  const renderRoomScreen = (room: any) => (
+  const renderRoom = (room: any) => (
     <div className={`min-h-screen p-4 ${room.type === 'approval' ? 'bg-gradient-to-br from-orange-50 to-red-50' : 'bg-gradient-to-br from-blue-50 to-purple-50'}`}>
       <div className="max-w-4xl mx-auto">
         <div className={`rounded-2xl shadow-lg p-6 mb-6 bg-white text-gray-900 ${room.type === 'approval' ? 'border-2 border-orange-200' : ''}`}>
@@ -277,41 +286,70 @@ export default function Home() {
                 {room.needsApproval ? (<><AlertCircle className="mr-1 text-orange-500" size={16} />승인 필요</>) : (<><CheckCircle className="mr-1 text-green-500" size={16} />즉시 사용 가능</>)}
               </p>
             </div>
-            <div className="text-right"><p className="text-sm text-gray-700">{formatDate(selectedDate)}</p></div>
+            <div className="text-right"><p className="text-sm text-gray-700">{new Date(formatDate(selectedDate)).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}</p></div>
           </div>
 
+          {/* Calendar */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4 text-gray-900">
-              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
+              <button type="button" onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronLeft size={20} /></button>
               <h3 className="text-lg font-semibold">{selectedDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}</h3>
-              <button onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronRight size={20} /></button>
+              <button type="button" onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1))} className="p-2 hover:bg-gray-100 rounded"><ChevronRight size={20} /></button>
             </div>
-            <div className="grid grid-cols-7 gap-2 mb-4 text-gray-900">{['일','월','화','수','목','금','토'].map(day => (<div key={day} className="text-center text-sm font-medium p-2">{day}</div>))}</div>
+
+            <div className="grid grid-cols-7 gap-2 mb-2 text-gray-900">
+              {['일','월','화','수','목','금','토'].map(day => (<div key={day} className="text-center text-sm font-medium p-2">{day}</div>))}
+            </div>
+
             <div className="grid grid-cols-7 gap-2">
-              {getDaysInMonth(selectedDate).map((date, i) => (
-                <button key={i} onClick={() => date && setSelectedDate(date)} className={`p-2 text-sm rounded-lg ${!date ? 'invisible' : date.toDateString() === selectedDate.toDateString() ? 'bg-purple-500 text-white' : 'hover:bg-purple-100 text-gray-900'}`} disabled={!date}>
-                  {date?.getDate()}
-                </button>
-              ))}
+              {getDaysInMonth(selectedDate).map((date, i) => {
+                const dk = date ? formatDate(date) : '';
+                const mine = date && myDateKeys.has(dk);
+                return (
+                  <button
+                    type="button"
+                    key={i}
+                    onClick={() => date && setSelectedDate(date)}
+                    className={`relative p-2 text-sm rounded-lg ${
+                      !date ? 'invisible' :
+                      date.toDateString() === selectedDate.toDateString()
+                        ? 'bg-purple-500 text-white'
+                        : 'hover:bg-purple-100 text-gray-900'
+                    }`}
+                    disabled={!date}
+                  >
+                    {date?.getDate()}
+                    {mine && date && (
+                      <span className="absolute left-1/2 -translate-x-1/2 bottom-1 block w-1.5 h-1.5 rounded-full bg-purple-600" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* Time slots: click to reserve */}
           <div>
-            <h4 className="text-lg font-semibold mb-4 flex items-center text-gray-900"><Clock className="mr-2" size={20} />시간 선택</h4>
+            <h4 className="text-lg font-semibold mb-4 flex items-center text-gray-900"><Clock className="mr-2" size={20} />시간 선택 (클릭하면 바로 예약)</h4>
             <div className="grid grid-cols-4 gap-3">
               {timeSlots.map(time => {
                 const reservation = getReservationStatus(room.id, selectedDate, time);
                 const hour = parseInt(time.split(':')[0], 10);
                 const isLateNight = hour >= 23;
 
+                const mine = reservation && reservation.studentId === userInfo.studentId && reservation.name === userInfo.name;
+
                 return (
                   <button
+                    type="button"
                     key={time}
                     onClick={() => {
-                      if (!agreed) return;
+                      if (!loggedIn) { setShowLogin(true); return; }
                       if (reservation) {
-                        if (reservation.studentId === userInfo.studentId && reservation.name === userInfo.name) {
-                          openCancelModal(room.id, selectedDate, time, reservation);
+                        if (mine) {
+                          // local cancel only (server cancel API not yet implemented)
+                          cancelReservationLocalOnly(room.id, selectedDate, time);
+                          loadServerMine();
                         }
                       } else {
                         makeReservation(room.id, selectedDate, time);
@@ -319,31 +357,25 @@ export default function Home() {
                     }}
                     className={`p-3 rounded-lg text-sm font-medium transition-all ${
                       reservation
-                        ? reservation.status === 'approved'
-                          ? reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                            ? 'bg-blue-500 text-white hover:bg-blue-600 ring-2 ring-blue-300'
-                            : 'bg-blue-500 text-white cursor-not-allowed'
-                          : room.type === 'approval'
-                          ? reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                            ? 'bg-orange-400 text-white hover:bg-orange-500 ring-2 ring-orange-300'
-                            : 'bg-orange-400 text-white cursor-not-allowed'
-                          : reservation.studentId === userInfo.studentId && reservation.name === userInfo.name
-                          ? 'bg-yellow-400 text-white hover:bg-yellow-500 ring-2 ring-yellow-300'
-                          : 'bg-yellow-400 text-white cursor-not-allowed'
+                        ? mine
+                          ? 'bg-blue-500 text-white hover:bg-blue-600 ring-2 ring-blue-300'
+                          : 'bg-blue-500 text-white cursor-not-allowed'
                         : isLateNight || room.needsApproval
                         ? room.needsApproval
                           ? 'bg-orange-100 border-2 border-orange-400 text-orange-700 hover:bg-orange-200'
                           : 'bg-red-100 border-2 border-red-400 text-red-700 hover:bg-red-200'
                         : 'bg-green-100 border-2 border-green-400 text-green-700 hover:bg-green-200'
-                    }`}
-                    disabled={!agreed || (reservation && !(reservation.studentId === userInfo.studentId && reservation.name === userInfo.name))}
+                    } ${mine ? 'relative after:content-["내_예약"] after:absolute after:-top-2 after:-right-2 after:text-[10px] after:bg-purple-600 after:text-white after:px-1.5 after:py-0.5 after:rounded' : ''}`}
+                    disabled={Boolean(reservation && !mine)}
+                    title={!loggedIn ? '로그인 후 이용' : reservation ? (mine ? '클릭하면 취소' : '다른 사용자의 예약') : '클릭하여 예약'}
                   >
                     <div className="text-gray-900">{time}</div>
                     {reservation && (
                       <div className="text-xs mt-1 text-gray-900">
-                        {reservation.status === 'approved' ? (<CheckCircle size={12} className="inline mr-1" />) : (<AlertCircle size={12} className="inline mr-1" />)}
-                        {reservation.name} · {reservation.capacity || 1}명
-                        {reservation.studentId === userInfo.studentId && reservation.name === userInfo.name && (<div className="text-xs mt-1 font-bold">클릭하여 취소</div>)}
+                        {reservation.status === 'approved'
+                          ? (<CheckCircle size={12} className="inline mr-1" />)
+                          : (<AlertCircle size={12} className="inline mr-1" />)}
+                        {reservation.name}
                       </div>
                     )}
                     {!reservation && (isLateNight || room.needsApproval) && (
@@ -359,11 +391,11 @@ export default function Home() {
     </div>
   );
 
+  // My Reservations page (shows date & time)
   const [nameQuery, setNameQuery] = useState('');
   const [idQuery, setIdQuery] = useState('');
-  const renderMyReservations = () => {
-    const mine = serverItems;
-
+  const renderMy = () => {
+    const mine = serverItems || [];
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50 p-4 text-gray-900">
         <div className="max-w-3xl mx-auto">
@@ -372,18 +404,17 @@ export default function Home() {
           <div className="bg-white p-4 rounded-xl shadow mb-4">
             <div className="grid md:grid-cols-3 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">이름으로 검색</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">이름</label>
                 <input type="text" placeholder="예: 김민수" className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">학번으로 검색</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">학번</label>
                 <input type="text" placeholder="예: 20210001" className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" value={idQuery} onChange={(e) => setIdQuery(e.target.value)} />
               </div>
               <div className="flex items-end">
                 <button onClick={() => loadServerMine(nameQuery || idQuery)} className="w-full p-3 rounded-lg bg-purple-600 text-white">검색</button>
               </div>
             </div>
-            <p className="text-xs text-gray-600 mt-2">둘 중 하나만 입력해도 됩니다. 비워두면 현재 입력된 학번/이름 기준으로 불러옵니다.</p>
           </div>
 
           {mine.length === 0 ? (
@@ -396,11 +427,15 @@ export default function Home() {
                   <div>
                     <div className="text-sm text-gray-600">{item.roomName}</div>
                     <div className="text-lg font-semibold text-purple-700">{item.dateKey} {item.timeKey}</div>
-                    <div className="text-xs text-gray-600">{item.status === 'approved' ? '승인됨' : item.status === 'rejected' ? '거절됨' : item.status === 'canceled' ? '취소됨' : '승인대기'} · 신청자 {item.name} · 학번 {item.studentId} · {item.capacity}명</div>
+                    <div className="text-xs text-gray-600">{item.status === 'approved' ? '승인됨' : item.status === 'rejected' ? '거절됨' : item.status === 'canceled' ? '취소됨' : '승인대기'} · 신청자 {item.name} · 학번 {item.studentId} · {item.capacity ?? 1}명</div>
                   </div>
                   <div className="flex gap-2">
-                    <button className="px-3 py-2 text-sm rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center gap-1" onClick={() => { setEditItem(item); setEditCapacity(String(item.capacity||'')); setEditMajor(String(item.major||'')); }}><Edit3 size={16}/>수정</button>
-                    <button className="px-3 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600" onClick={() => { const d = new Date(item.dateKey); cancelReservation(item.roomId, d, item.timeKey); }}>취소</button>
+                    <button className="px-3 py-2 text-sm rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center gap-1" onClick={() => { setEditItem(item); setEditCapacity(String(item.capacity||'1')); setEditMajor(String(item.major||'')); }}><Edit3 size={16}/>수정</button>
+                    <button className="px-3 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600" onClick={() => {
+                      // local-only cancel UI
+                      const d = new Date(item.dateKey);
+                      cancelReservationLocalOnly(item.roomId, d, item.timeKey);
+                    }}>취소</button>
                   </div>
                 </div>
               ))}
@@ -411,115 +446,16 @@ export default function Home() {
     );
   };
 
-  const renderUserForm = () => {
-    const canSubmit =
-      userInfo.studentId.trim().length > 0 &&
-      userInfo.name.trim().length > 0 &&
-      userInfo.major.trim().length > 0 &&
-      Number(userInfo.capacity) > 0 &&
-      selectedRoom && selectedTime;
-
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
-          <h3 className="text-xl font-bold mb-4 text-center">예약 정보 입력</h3>
-          <div className="space-y-4">
-            <div><label className="block text-sm font-medium text-gray-900 mb-2">학번</label>
-              <input type="text" value={userInfo.studentId} onChange={(e) => setUserInfo({ ...userInfo, studentId: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder-gray-400" placeholder="예: 20210001" />
-            </div>
-            <div><label className="block text-sm font-medium text-gray-900 mb-2">이름</label>
-              <input type="text" value={userInfo.name} onChange={(e) => setUserInfo({ ...userInfo, name: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder-gray-400" placeholder="이름을 입력하세요" />
-            </div>
-            <div><label className="block text-sm font-medium text-gray-900 mb-2">세부전공</label>
-              <input type="text" value={userInfo.major} onChange={(e) => setUserInfo({ ...userInfo, major: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder-gray-400" placeholder="예: 실용무용전공, K-POP댄스전공, 발레전공 등" />
-            </div>
-            <div><label className="block text-sm font-medium text-gray-900 mb-2">사용인원</label>
-              <input type="number" min={1} value={userInfo.capacity} onChange={(e) => setUserInfo({ ...userInfo, capacity: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 text-gray-900 placeholder-gray-400" placeholder="예: 1" />
-            </div>
-          </div>
-          <div className="flex space-x-3 mt-6">
-            <button onClick={() => setShowUserForm(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 hover:bg-gray-50">취소</button>
-            <button
-              onClick={async () => {
-                if (!canSubmit) return;
-                const dateKey = selectedDate.toDateString(); const timeKey = `${selectedTime}`;
-                const room = rooms.find(r => r.id === selectedRoom);
-                const saved = await persistReservation({
-                  roomId: String(selectedRoom), roomName: room?.name || String(selectedRoom), dateKey, timeKey,
-                  studentId: userInfo.studentId.trim(), name: userInfo.name.trim(), major: userInfo.major.trim(),
-                  capacity: Math.max(1, Number(userInfo.capacity) || 1),
-                });
-                if (!saved) return;
-                const status = saved.status || 'pending';
-                const newReservation = {
-                  studentId: userInfo.studentId.trim(), name: userInfo.name.trim(), major: userInfo.major.trim(),
-                  capacity: Math.max(1, Number(userInfo.capacity) || 1), status, timestamp: new Date().toISOString()
-                };
-                setReservations((prev: any) => ({
-                  ...prev,
-                  [String(selectedRoom)]: {
-                    ...prev[String(selectedRoom)],
-                    [dateKey]: {
-                      ...prev[String(selectedRoom)]?.[dateKey],
-                      [timeKey]: newReservation
-                    }
-                  }
-                }));
-                setShowUserForm(false);
-              }}
-              className={`flex-1 px-4 py-2 rounded-lg ${canSubmit ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
-              disabled={!canSubmit}
-            >
-              예약하기
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderCancelModal = () => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
-        <h3 className="text-xl font-bold mb-4 text-center text-red-600">예약 취소</h3>
-        {cancelTarget && (
-          <div className="text-center mb-6">
-            <p className="text-gray-700 mb-2">다음 예약을 취소하시겠습니까?</p>
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="font-semibold">{rooms.find(r => r.id === cancelTarget.roomId)?.name}</p>
-              <p className="text-sm text-gray-700">{formatDate(cancelTarget.date)}</p>
-              <p className="text-lg font-bold text-purple-700">{cancelTarget.time}</p>
-              <p className="text-sm mt-2 text-gray-700">{cancelTarget.reservation.name} ({cancelTarget.reservation.studentId}) · {cancelTarget.reservation.capacity || 1}명</p>
-              <p className="text-xs text-gray-600">{cancelTarget.reservation.major}</p>
-            </div>
-            <p className="text-red-600 text-sm mt-4">사용하지 않는 시간은 미리 취소해주세요</p>
-          </div>
-        )}
-        <div className="flex space-x-3">
-          <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 hover:bg-gray-50">취소</button>
-          <button
-            onClick={() => {
-              if (cancelTarget) {
-                cancelReservation(cancelTarget.roomId, cancelTarget.date, cancelTarget.time);
-                setShowCancelModal(false); setCancelTarget(null);
-              }
-            }}
-            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-          >예약 취소</button>
-        </div>
-      </div>
-    </div>
-  );
-
+  // edit modal (optional fields)
   const renderEditModal = () => (
     <div className={`fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 ${editItem ? '' : 'hidden'}`}>
       <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
         <h3 className="text-xl font-bold mb-4 text-center">예약 수정</h3>
         <div className="space-y-4">
-          <div><label className="block text-sm font-medium text-gray-900 mb-2">세부전공</label>
+          <div><label className="block text-sm font-medium text-gray-900 mb-2">세부전공(선택)</label>
             <input type="text" value={editMajor} onChange={(e)=>setEditMajor(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="전공" />
           </div>
-          <div><label className="block text-sm font-medium text-gray-900 mb-2">사용인원</label>
+          <div><label className="block text-sm font-medium text-gray-900 mb-2">사용인원(선택)</label>
             <input type="number" min={1} value={editCapacity} onChange={(e)=>setEditCapacity(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 1" />
           </div>
         </div>
@@ -529,12 +465,10 @@ export default function Home() {
             onClick={async ()=>{
               if (!editItem) return;
               const payload: any = {};
-              if (editMajor) payload.major = editMajor;
+              if (editMajor !== undefined) payload.major = editMajor;
               if (editCapacity) payload.capacity = Math.max(1, Number(editCapacity) || 1);
               const r = await fetch(`/api/reservations/${editItem._id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
               });
               await r.text();
               await loadServerMine();
@@ -547,18 +481,21 @@ export default function Home() {
     </div>
   );
 
-  const renderCurrentScreen = () => {
-    if (currentScreen === INDEX_MAIN) return renderMainScreen();
-    if (!agreed) return renderMainScreen();
-    if (currentScreen === INDEX_RANKING) return renderRankingScreen();
-    if (currentScreen === INDEX_MY_RESERVATIONS) return renderMyReservations();
+  // choose screen
+  useEffect(() => {
+    if (currentScreen === INDEX_MY_RESERVATIONS) loadServerMine();
+  }, [currentScreen]);
+
+  const renderCurrent = () => {
+    if (!loggedIn) return renderHome();
+    if (currentScreen === INDEX_HOME) return renderRanking(); // after login, INDEX_HOME acts as TOP10
+    if (currentScreen === INDEX_RANKING) return renderRanking();
+    if (currentScreen === INDEX_MY_RESERVATIONS) return renderMy();
     const idxInRooms = currentScreen - INDEX_ROOMS_START;
     const theRoom = roomScreens[idxInRooms];
-    if (!theRoom) return renderMainScreen();
-    return renderRoomScreen(theRoom);
+    if (!theRoom) return renderRanking();
+    return renderRoom(theRoom);
   };
-
-  useEffect(() => { if (currentScreen === INDEX_MY_RESERVATIONS) loadServerMine(); }, [currentScreen]);
 
   return (
     <div
@@ -569,14 +506,19 @@ export default function Home() {
       ref={containerRef}
       tabIndex={0}
     >
+      {/* Left: menu */}
       <div className="fixed top-4 left-4 z-50">
-        <button onClick={() => agreed && setShowMenu(!showMenu)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-disabled={!agreed} aria-label="메뉴 열기" title={agreed ? '' : '동의 체크 후 이용 가능합니다'}>
+        <button
+          onClick={() => loggedIn && setShowMenu(!showMenu)}
+          className="p-3 rounded-lg shadow-lg bg-white text-gray-900"
+          aria-label="메뉴 열기"
+          title={loggedIn ? '' : '로그인 후 이용 가능합니다'}
+        >
           <Menu size={20} />
         </button>
-        {showMenu && agreed && (
+        {showMenu && loggedIn && (
           <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border text-gray-900 subpixel-antialiased">
             <h3 className="font-bold text-gray-900 mb-4">메뉴</h3>
-            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MAIN); setShowMenu(false); }}>홈</button>
             <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_RANKING); setShowMenu(false); }}>세종연습왕 TOP10</button>
             <div className="border-t my-2" />
             {roomScreens.map((r, i) => {
@@ -588,46 +530,75 @@ export default function Home() {
               );
             })}
             <div className="border-t my-2" />
-            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>
-              내 예약 현황
-            </button>
+            <button className="w-full text-left p-3 hover:bg-purple-50 rounded-lg text-gray-900" onClick={() => { setCurrentScreen(INDEX_MY_RESERVATIONS); setShowMenu(false); }}>내 예약 현황</button>
           </nav>
         )}
       </div>
 
-      <div className="fixed top-4 right-4 z-50">
-        <button onClick={() => setShowAdminLogin(true)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="관리자 로그인" title="관리자">
+      {/* Right: user login + admin */}
+      <div className="fixed top-4 right-4 z-50 flex gap-2">
+        {!loggedIn && (
+          <button onClick={() => setShowLogin(true)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="로그인">
+            <LogIn size={20} />
+          </button>
+        )}
+        <button onClick={() => setShowAdminLogin(true)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="관리자">
           <Shield size={20} />
         </button>
       </div>
 
-      {renderCurrentScreen()}
+      {renderCurrent()}
 
-      {agreed && currentScreen > 0 && (
+      {loggedIn && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 shadow-lg text-gray-900">
           <div className="flex items-center space-x-2">
-            <button onClick={() => handleSwipe('right')} disabled={currentScreen === 0} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="이전"><ChevronLeft size={20} /></button>
-            <span className="text-sm font-medium">{currentScreen} / {MAX_INDEX}</span>
-            <button onClick={() => handleSwipe('left')} disabled={currentScreen === MAX_INDEX} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="다음"><ChevronRight size={20} /></button>
+            <button onClick={() => handleSwipe('right')} className="p-1 rounded-full hover:bg-gray-100" aria-label="이전">
+              <ChevronLeft size={20} />
+            </button>
+            <span className="text-sm font-medium">{Math.min(currentScreen, MAX_INDEX)} / {MAX_INDEX}</span>
+            <button onClick={() => handleSwipe('left')} className="p-1 rounded-full hover:bg-gray-100" aria-label="다음">
+              <ChevronRight size={20} />
+            </button>
           </div>
         </div>
       )}
 
-      {agreed && currentScreen > 0 && (
-        <>
-          <button onClick={() => handleSwipe('right')} className="hidden md:flex fixed left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white shadow-lg" aria-label="이전">
-            <ChevronLeft size={20} />
-          </button>
-          <button onClick={() => handleSwipe('left')} className="hidden md:flex fixed right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white shadow-lg" aria-label="다음">
-            <ChevronRight size={20} />
-          </button>
-        </>
+      {/* Login modal */}
+      {showLogin && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
+            <h3 className="text-xl font-bold mb-4 text-center">로그인</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">이름</label>
+                <input type="text" value={loginName} onChange={(e)=>setLoginName(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 김민수" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">학번</label>
+                <input type="text" value={loginSid} onChange={(e)=>setLoginSid(e.target.value)} className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" placeholder="예: 20210001" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button onClick={()=>setShowLogin(false)} className="flex-1 px-4 py-2 border rounded-lg">취소</button>
+              <button
+                onClick={()=>{
+                  if (!loginName.trim() || !loginSid.trim()) return;
+                  setUserInfo({ name: loginName.trim(), studentId: loginSid.trim() });
+                  setShowLogin(false);
+                  setCurrentScreen(INDEX_RANKING);
+                  loadServerMine();
+                }}
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >로그인</button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {showUserForm && renderUserForm()}
-      {showCancelModal && renderCancelModal()}
+      {/* Edit modal */}
       {renderEditModal()}
 
+      {/* Admin login modal (unchanged behavior) */}
       {showAdminLogin && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
