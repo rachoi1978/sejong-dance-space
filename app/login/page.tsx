@@ -8,7 +8,6 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
 
-  const LS_USER = 'sds_userInfo_v4';
   const canLogin = name.trim().length > 0 && studentId.trim().length > 0;
 
   return (
@@ -52,11 +51,13 @@ export default function LoginPage() {
             type="button"
             disabled={!canLogin}
             onClick={()=>{
-              if (!canLogin) return;
               try {
-                localStorage.setItem(LS_USER, JSON.stringify({ name: name.trim(), studentId: studentId.trim() }));
+                localStorage.setItem('sds_userInfo_v4', JSON.stringify({
+                  name: name.trim(),
+                  studentId: studentId.trim(),
+                }));
               } catch {}
-              router.push('/?screen=ranking');
+              router.push('/'); // 로그인 후 홈으로
             }}
             className={`flex-1 px-4 py-2 rounded-lg ${canLogin ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
           >
