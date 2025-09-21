@@ -4,6 +4,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Clock, Trophy, CheckCircle, AlertCircle, Menu, Shield, Edit3, Save } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+async function readJSON<T>(res: Response, fallback: T): Promise<T> {
+  const t = await res.text();
+  if (!t) return fallback;
+  try { return JSON.parse(t) as T; } catch { return fallback; }
+}
+
 export default function Home() {
   const router = useRouter();
 
@@ -50,10 +56,7 @@ export default function Home() {
   }, []);
   useEffect(() => { try { localStorage.setItem(LS_KEYS.reservations, JSON.stringify(reservations)); } catch {} }, [reservations]);
   useEffect(() => { try { localStorage.setItem(LS_KEYS.userInfo, JSON.stringify(userInfo)); } catch {} }, [userInfo]);
-  useEffect(() => {
-    try { localStorage.setItem(LS_KEYS.agreed, String(agreed)); } catch {}
-    if (!agreed) { setCurrentScreen(0); setShowMenu(false); }
-  }, [agreed]);
+  useEffect(() => { try { localStorage.setItem(LS_KEYS.agreed, String(agreed)); } catch {} if (!agreed) { setCurrentScreen(0); setShowMenu(false); } }, [agreed]);
 
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
@@ -124,15 +127,12 @@ export default function Home() {
     studentId: string; name: string; major: string; capacity: number;
   }) {
     try {
-      const r = await fetch("/api/reservations", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || "예약 오류");
-      return j as { ok: boolean; id: string; status: string };
-    } catch (e) {
-      alert((e as any)?.message || "예약 중 오류");
+      const r = await fetch("/api/reservations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const j = await readJSON<{ ok?: boolean; id?: string; status?: string; error?: string }>(r, {} as any);
+      if (!r.ok || !j?.ok) throw new Error(j?.error || "예약 오류");
+      return j;
+    } catch (e:any) {
+      alert(e?.message || "예약 중 오류");
       return null;
     }
   }
@@ -157,9 +157,7 @@ export default function Home() {
     };
     setReservations((prev: any) => ({
       ...prev,
-      [roomId]: { ...(prev[roomId]||{}),
-        [dateKey]: { ...(prev[roomId]?.[dateKey]||{}), [timeKey]: newReservation }
-      }
+      [roomId]: { ...(prev[roomId]||{}), [dateKey]: { ...(prev[roomId]?.[dateKey]||{}), [timeKey]: newReservation } }
     }));
   };
 
@@ -175,9 +173,7 @@ export default function Home() {
       return next;
     });
   };
-  const openCancelModal = (roomId: string, date: Date, time: string, reservation: any) => {
-    setCancelTarget({ roomId, date, time, reservation }); setShowCancelModal(true);
-  };
+  const openCancelModal = (roomId: string, date: Date, time: string, reservation: any) => { setCancelTarget({ roomId, date, time, reservation }); setShowCancelModal(true); };
 
   async function loadServerMine(text?: string) {
     const url = new URL("/api/reservations", window.location.origin);
@@ -185,7 +181,8 @@ export default function Home() {
     const sid = text ?? userInfo.studentId;
     if (name) url.searchParams.set("name", name);
     if (sid) url.searchParams.set("studentId", sid);
-    const rows = await fetch(url.toString(), { cache: "no-store" }).then(r => r.json());
+    const r = await fetch(url.toString(), { cache: "no-store" });
+    const rows = await readJSON<any[]>(r, []);
     setServerItems(rows || []);
   }
 
@@ -372,10 +369,7 @@ export default function Home() {
                 <input type="text" placeholder="예: 20210001" className="w-full p-3 border rounded-lg text-gray-900 placeholder-gray-400" value={idQuery} onChange={(e) => setIdQuery(e.target.value)} />
               </div>
               <div className="flex items-end">
-                <button
-                  onClick={() => loadServerMine(nameQuery || idQuery)}
-                  className="w-full p-3 rounded-lg bg-purple-600 text-white"
-                >검색</button>
+                <button onClick={() => loadServerMine(nameQuery || idQuery)} className="w-full p-3 rounded-lg bg-purple-600 text-white">검색</button>
               </div>
             </div>
             <p className="text-xs text-gray-600 mt-2">둘 중 하나만 입력해도 됩니다. 비워두면 현재 입력된 학번/이름 기준으로 불러옵니다.</p>
@@ -394,17 +388,8 @@ export default function Home() {
                     <div className="text-xs text-gray-600">{item.status === 'approved' ? '승인됨' : item.status === 'rejected' ? '거절됨' : item.status === 'canceled' ? '취소됨' : '승인대기'} · 신청자 {item.name} · 학번 {item.studentId} · {item.capacity}명</div>
                   </div>
                   <div className="flex gap-2">
-                    <button
-                      className="px-3 py-2 text-sm rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center gap-1"
-                      onClick={() => { setEditItem(item); setEditCapacity(String(item.capacity||'')); setEditMajor(String(item.major||'')); }}
-                    ><Edit3 size={16}/>수정</button>
-                    <button
-                      className="px-3 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600"
-                      onClick={() => {
-                        const d = new Date(item.dateKey);
-                        cancelReservation(item.roomId, d, item.timeKey);
-                      }}
-                    >취소</button>
+                    <button className="px-3 py-2 text-sm rounded-lg bg-slate-200 hover:bg-slate-300 flex items-center gap-1" onClick={() => { setEditItem(item); setEditCapacity(String(item.capacity||'')); setEditMajor(String(item.major||'')); }}><Edit3 size={16}/>수정</button>
+                    <button className="px-3 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600" onClick={() => { const d = new Date(item.dateKey); cancelReservation(item.roomId, d, item.timeKey); }}>취소</button>
                   </div>
                 </div>
               ))}
@@ -533,7 +518,7 @@ export default function Home() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
               });
-              if (!r.ok) { alert('수정 실패'); return; }
+              await r.text();
               await loadServerMine();
               setEditItem(null);
             }}
@@ -555,9 +540,7 @@ export default function Home() {
     return renderRoomScreen(theRoom);
   };
 
-  useEffect(() => {
-    if (currentScreen === INDEX_MY_RESERVATIONS) loadServerMine();
-  }, [currentScreen]);
+  useEffect(() => { if (currentScreen === INDEX_MY_RESERVATIONS) loadServerMine(); }, [currentScreen]);
 
   return (
     <div
@@ -568,16 +551,9 @@ export default function Home() {
       ref={containerRef}
     >
       <div className="fixed top-4 left-4 z-50">
-        <button
-          onClick={() => agreed && setShowMenu(!showMenu)}
-          className="p-3 rounded-lg shadow-lg bg-white text-gray-900"
-          aria-disabled={!agreed}
-          aria-label="메뉴 열기"
-          title={agreed ? '' : '동의 체크 후 이용 가능합니다'}
-        >
+        <button onClick={() => agreed && setShowMenu(!showMenu)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-disabled={!agreed} aria-label="메뉴 열기" title={agreed ? '' : '동의 체크 후 이용 가능합니다'}>
           <Menu size={20} />
         </button>
-
         {showMenu && agreed && (
           <nav className="absolute top-14 left-0 bg-white rounded-xl shadow-2xl p-4 w-64 border text-gray-900 subpixel-antialiased">
             <h3 className="font-bold text-gray-900 mb-4">메뉴</h3>
@@ -601,12 +577,7 @@ export default function Home() {
       </div>
 
       <div className="fixed top-4 right-4 z-50">
-        <button
-          onClick={() => setShowAdminLogin(true)}
-          className="p-3 rounded-lg shadow-lg bg-white text-gray-900"
-          aria-label="관리자 로그인"
-          title="관리자"
-        >
+        <button onClick={() => setShowAdminLogin(true)} className="p-3 rounded-lg shadow-lg bg-white text-gray-900" aria-label="관리자 로그인" title="관리자">
           <Shield size={20} />
         </button>
       </div>
@@ -616,13 +587,9 @@ export default function Home() {
       {agreed && currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 shadow-lg text-gray-900">
           <div className="flex items-center space-x-2">
-            <button onClick={() => handleSwipe('right')} disabled={currentScreen === 0} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="이전">
-              <ChevronLeft size={20} />
-            </button>
+            <button onClick={() => handleSwipe('right')} disabled={currentScreen === 0} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="이전"><ChevronLeft size={20} /></button>
             <span className="text-sm font-medium">{currentScreen} / {MAX_INDEX}</span>
-            <button onClick={() => handleSwipe('left')} disabled={currentScreen === MAX_INDEX} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="다음">
-              <ChevronRight size={20} />
-            </button>
+            <button onClick={() => handleSwipe('left')} disabled={currentScreen === MAX_INDEX} className="p-1 rounded-full hover:bg-gray-100 disabled:opacity-50" aria-label="다음"><ChevronRight size={20} /></button>
           </div>
         </div>
       )}
@@ -635,37 +602,19 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md text-gray-900">
             <h3 className="text-xl font-bold mb-4 text-center">관리자 로그인</h3>
-            <input
-              type="email"
-              className="w-full p-3 border rounded-lg mb-3 text-gray-900 placeholder-gray-400"
-              placeholder="관리자 이메일"
-              value={adminEmail}
-              onChange={(e)=>setAdminEmail(e.target.value)}
-            />
+            <input type="email" className="w-full p-3 border rounded-lg mb-3 text-gray-900 placeholder-gray-400" placeholder="관리자 이메일" value={adminEmail} onChange={(e)=>setAdminEmail(e.target.value)} />
             {adminError && <div className="text-red-600 text-sm mb-3">{adminError}</div>}
             <div className="flex gap-2">
               <button onClick={()=>setShowAdminLogin(false)} className="flex-1 px-4 py-2 border rounded-lg">취소</button>
               <button
                 onClick={async ()=>{
                   setAdminError('');
-                  const r = await fetch('/api/admin/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: adminEmail })
-                  });
-                  if (r.ok) {
-                    setShowAdminLogin(false);
-                    router.push('/admin');
-                  } else {
-                    const j = await r.json().catch(()=>({}));
-                    setAdminError(j?.error || '로그인 실패');
-                  }
+                  const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: adminEmail }) });
+                  const j = await readJSON<{ok?:boolean;error?:string}>(r, {} as any);
+                  if (r.ok && j?.ok) { setShowAdminLogin(false); router.push('/admin'); } else { setAdminError(j?.error || '로그인 실패'); }
                 }}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg"
-                disabled={!adminEmail}
-              >
-                들어가기
-              </button>
+                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg" disabled={!adminEmail}
+              >들어가기</button>
             </div>
           </div>
         </div>

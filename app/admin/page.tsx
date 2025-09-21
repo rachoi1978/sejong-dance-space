@@ -11,6 +11,12 @@ type Row = {
   status: "pending" | "approved" | "rejected" | "canceled";
 };
 
+async function readJSON<T>(res: Response, fallback: T): Promise<T> {
+  const t = await res.text();
+  if (!t) return fallback;
+  try { return JSON.parse(t) as T; } catch { return fallback; }
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [items, setItems] = useState<Row[]>([]);
@@ -20,8 +26,8 @@ export default function AdminPage() {
   useEffect(() => {
     (async () => {
       const r = await fetch("/api/admin/check", { cache: "no-store" });
-      const j = await r.json();
-      if (!j.ok) router.replace("/");
+      const j = await readJSON<{ok?:boolean}>(r, { ok: false } as any);
+      if (!j?.ok) router.replace("/");
     })();
   }, [router]);
 
@@ -32,7 +38,8 @@ export default function AdminPage() {
       url.searchParams.set("studentId", q.text.trim());
     }
     if (q.status) url.searchParams.set("status", q.status);
-    const rows: Row[] = await fetch(url.toString(), { cache: "no-store" }).then(r => r.json());
+    const r = await fetch(url.toString(), { cache: "no-store" });
+    const rows = await readJSON<Row[]>(r, []);
     setItems(rows);
   };
 
@@ -44,10 +51,11 @@ export default function AdminPage() {
   }, [q.text, q.status]);
 
   const setStatus = async (id: string, status: Row["status"]) => {
-    await fetch(`/api/reservations/${id}`, {
+    const r = await fetch(`/api/reservations/${id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
+    await r.text();
     await load();
   };
 
