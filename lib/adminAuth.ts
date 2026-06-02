@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { getSupabase } from "./supabase";
 
 export type AdminSession = {
@@ -18,42 +19,30 @@ export function isMaster(email: string): boolean {
   return getMasterEmails().includes(String(email).trim().toLowerCase());
 }
 
-/** 요청 헤더에서 쿠키 한 개 읽기 */
-export function readCookie(req: Request, name: string): string | null {
-  const header = req.headers.get("cookie") || "";
-  for (const part of header.split(";")) {
-    const idx = part.indexOf("=");
-    if (idx === -1) continue;
-    const k = part.slice(0, idx).trim();
-    const v = part.slice(idx + 1).trim();
-    if (k === name) {
-      try {
-        return decodeURIComponent(v);
-      } catch {
-        return v;
-      }
-    }
+/** 로그인 세션 쿠키(sds_admin)에서 이메일을 읽는다. (Next 표준 cookies() 사용) */
+export async function getSessionEmail(): Promise<string | null> {
+  try {
+    const store = await cookies();
+    const raw = store.get("sds_admin")?.value;
+    if (!raw) return null;
+    let email = raw;
+    try { email = decodeURIComponent(raw); } catch {}
+    email = email.trim().toLowerCase();
+    if (!email || email === "1") return null;
+    return email;
+  } catch {
+    return null;
   }
-  return null;
-}
-
-/** 로그인 세션 쿠키에서 이메일 추출 (없으면 null) */
-export function getSessionEmail(req: Request): string | null {
-  const raw = readCookie(req, "sds_admin");
-  if (!raw) return null;
-  const email = raw.trim().toLowerCase();
-  if (!email || email === "1") return null;
-  return email;
 }
 
 /**
- * 현재 요청의 관리자 신원을 확인한다.
- * - 마스터: ADMIN_EMAILS에 포함된 이메일
- * - 일반관리자: admins 테이블에서 status === "approved"
- * 둘 다 아니면 null
+ * 현재 요청의 관리자 신원 확인.
+ * - 마스터: ADMIN_EMAILS 포함 이메일
+ * - 일반관리자: sds_admins 에서 status === "approved"
+ * (req 인자는 호환용이며 사용하지 않는다)
  */
-export async function resolveAdmin(req: Request): Promise<AdminSession | null> {
-  const email = getSessionEmail(req);
+export async function resolveAdmin(_req?: Request): Promise<AdminSession | null> {
+  const email = await getSessionEmail();
   if (!email) return null;
 
   if (isMaster(email)) {
@@ -68,11 +57,9 @@ export async function resolveAdmin(req: Request): Promise<AdminSession | null> {
       .eq("email", email)
       .eq("status", "approved")
       .maybeSingle();
-    if (data) {
-      return { email, name: (data as any).name || email, role: "admin" };
-    }
+    if (data) return { email, name: (data as any).name || email, role: "admin" };
   } catch {
-    // 오류 시 권한 없음 처리
+    // 권한 없음 처리
   }
   return null;
 }

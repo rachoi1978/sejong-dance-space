@@ -48,7 +48,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "로그인할 수 없습니다." }, { status: 401 });
     }
 
-    const res = NextResponse.json({ ok: true, role, name });
+    const res = NextResponse.json({ ok: true, role, name }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     res.cookies.set("sds_admin", encodeURIComponent(norm), {
       httpOnly: true,
       secure: true,

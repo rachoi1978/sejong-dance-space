@@ -31,6 +31,8 @@ export default function Home() {
     { id: 'saenalE', name: '새날관 E', type: 'open', needsApproval: false },
     { id: 'daeyangHall', name: '대양AI 다목적홀', type: 'approval', needsApproval: true }
   ];
+  // 실제 연습실 목록 (맨 앞 ranking 제외). 화면번호: 1=랭킹, 2부터 연습실(2=광개토A)
+  const practiceRooms = rooms.slice(1);
   const timeSlots = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
   const topUsers = [
     { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
@@ -46,8 +48,9 @@ export default function Home() {
   ];
 
   const handleSwipe = (dir: 'left' | 'right') => {
-    if (dir === 'left' && currentScreen < rooms.length - 1) setCurrentScreen(currentScreen + 1);
-    else if (dir === 'right' && currentScreen > 0) setCurrentScreen(currentScreen - 1);
+    const maxScreen = 1 + practiceRooms.length; // 1=랭킹, 그 뒤로 연습실
+    if (dir === 'left' && currentScreen < maxScreen) setCurrentScreen(currentScreen + 1);
+    else if (dir === 'right' && currentScreen > 1) setCurrentScreen(currentScreen - 1);
   };
   const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
   const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
@@ -157,8 +160,8 @@ export default function Home() {
           <button onClick={() => { setCurrentScreen(1); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg mb-1 font-semibold text-[#16314f] hover:bg-gray-50">TOP10 랭킹</button>
           <div className="border-t pt-3 mt-2">
             <h4 className="text-xs font-bold text-gray-400 mb-2">연습실</h4>
-            {rooms.slice(1).map((room, i) => (
-              <button key={room.id} onClick={() => { setCurrentScreen(i + 1); setShowMenu(false); }}
+            {practiceRooms.map((room, i) => (
+              <button key={room.id} onClick={() => { setCurrentScreen(i + 2); setShowMenu(false); }}
                 className={`w-full text-left p-2 rounded-lg mb-1 text-sm flex justify-between items-center ${room.needsApproval ? 'text-[#ef6644] hover:bg-orange-50' : 'text-[#16314f] hover:bg-gray-50'}`}>
                 {room.name}
                 {room.needsApproval && <span className="text-[10px] bg-[#fbe3dc] text-[#ef6644] px-2 py-0.5 rounded-full">승인필요</span>}
@@ -304,7 +307,7 @@ export default function Home() {
           {!userInfo.name ? (
             <div className="bg-white rounded-xl p-8 text-center shadow"><p className="text-gray-600 mb-4">먼저 로그인해 주세요.</p><button onClick={() => setShowLogin(true)} className="bg-[#16314f] text-white px-6 py-3 rounded-lg font-bold">로그인</button></div>
           ) : my.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center shadow"><p className="text-gray-600 mb-4">예약 내역이 없습니다.</p><button onClick={() => setCurrentScreen(1)} className="bg-[#16314f] text-white px-6 py-3 rounded-lg font-bold">연습실 보기</button></div>
+            <div className="bg-white rounded-xl p-8 text-center shadow"><p className="text-gray-600 mb-4">예약 내역이 없습니다.</p><button onClick={() => setCurrentScreen(2)} className="bg-[#16314f] text-white px-6 py-3 rounded-lg font-bold">연습실 보기</button></div>
           ) : (
             <div className="space-y-3">
               {my.map((r, i) => (
@@ -355,21 +358,22 @@ export default function Home() {
 
   const renderScreen = () => {
     if (showLogin) return renderLogin();
+    if (!userInfo.name) return renderMain();
     if (currentScreen === 0) return renderMain();
     if (currentScreen === 1) return renderRanking();
     if (currentScreen === -1) return renderMy();
-    return renderRoom(rooms[currentScreen]);
+    return renderRoom(practiceRooms[currentScreen - 2]);
   };
 
   return (
     <div className="relative overflow-hidden" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} ref={containerRef}>
-      {renderMenu()}
+      {userInfo.name && renderMenu()}
       {!showLogin && <TopRightLogo />}
       {renderScreen()}
-      {currentScreen > 0 && (
+      {userInfo.name && currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2 z-40">
           <button onClick={() => handleSwipe('right')} className="p-1">←</button>
-          <span className="text-sm font-semibold text-[#16314f]">{currentScreen} / {rooms.length - 1}</span>
+          <span className="text-sm font-semibold text-[#16314f]">{currentScreen} / {practiceRooms.length + 1}</span>
           <button onClick={() => handleSwipe('left')} className="p-1">→</button>
         </div>
       )}

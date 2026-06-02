@@ -4,8 +4,13 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { resolveAdmin } from "../../../../lib/adminAuth";
 
-export async function GET(req: Request) {
-  const s = await resolveAdmin(req);
-  if (!s) return NextResponse.json({ ok: false });
-  return NextResponse.json({ ok: true, email: s.email, name: s.name, role: s.role });
+const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
+
+export async function GET() {
+  const s = await resolveAdmin();
+  if (!s) return NextResponse.json({ ok: false }, { headers: NO_STORE });
+  return NextResponse.json(
+    { ok: true, email: s.email, name: s.name, role: s.role },
+    { headers: NO_STORE }
+  );
 }
