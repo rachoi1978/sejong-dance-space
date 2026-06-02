@@ -7,9 +7,11 @@ import { resolveAdmin } from "../../../../../lib/adminAuth";
 import { logAction } from "../../../../../lib/audit";
 
 // 마스터만 관리자 등록 승인/거절 (+ 로그)
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const s = await resolveAdmin(req);
+    const { id } = await ctx.params;
+
+    const s = await resolveAdmin();
     if (!s || s.role !== "master") {
       return NextResponse.json({ error: "마스터 관리자만 승인할 수 있습니다." }, { status: 403 });
     }
@@ -25,15 +27,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const { error } = await sb
       .from("sds_admins")
       .update({ status, approved_by: s.email, approved_at: new Date().toISOString() })
-      .eq("id", params.id);
+      .eq("id", id);
     if (error) throw error;
 
-    const { data: a } = await sb
-      .from("sds_admins")
-      .select("email,name")
-      .eq("id", params.id)
-      .maybeSingle();
-    const t = a ? `관리자 ${(a as any).name}(${(a as any).email})` : params.id;
+    const { data: a } = await sb.from("sds_admins").select("email,name").eq("id", id).maybeSingle();
+    const t = a ? `관리자 ${(a as any).name}(${(a as any).email})` : id;
     await logAction(s.email, s.name, action === "approve" ? "관리자 승인" : "관리자 거절", t);
 
     return NextResponse.json({ ok: true, status });

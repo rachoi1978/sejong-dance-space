@@ -7,9 +7,11 @@ import { resolveAdmin } from "../../../../lib/adminAuth";
 import { logAction } from "../../../../lib/audit";
 
 // 관리자: 예약 승인/거절/수정 (승인자 기록 + 로그)
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const admin = await resolveAdmin(req);
+    const { id } = await ctx.params;
+
+    const admin = await resolveAdmin();
     if (!admin) {
       return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 401 });
     }
@@ -36,25 +38,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (typeof body.studentId === "string") patch.student_id = body.studentId;
 
     const sb = getSupabase();
-    const { error } = await sb.from("sds_reservations").update(patch).eq("id", params.id);
+    const { error } = await sb.from("sds_reservations").update(patch).eq("id", id);
     if (error) throw error;
 
-    // 승인/거절이면 로그 기록
     if (decision) {
       const { data: r } = await sb
         .from("sds_reservations")
         .select("room_name,date_key,time_key,name,student_id")
-        .eq("id", params.id)
+        .eq("id", id)
         .maybeSingle();
       const t = r
         ? `${(r as any).room_name} ${(r as any).date_key} ${(r as any).time_key} / ${(r as any).name}(${(r as any).student_id})`
-        : params.id;
-      await logAction(
-        admin.email,
-        admin.name,
-        decision === "approved" ? "예약 승인" : "예약 거절",
-        t
-      );
+        : id;
+      await logAction(admin.email, admin.name, decision === "approved" ? "예약 승인" : "예약 거절", t);
     }
 
     return NextResponse.json({ ok: true });
@@ -64,8 +60,9 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 }
 
 // 학생: 본인 예약 취소 (학번+이름 일치 시). 관리자 로그인 불필요.
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await ctx.params;
     const body = await req.json().catch(() => ({}));
     const studentId = String(body.studentId || "").trim();
     const name = String(body.name || "").trim();
@@ -74,15 +71,15 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     const { data: row } = await sb
       .from("sds_reservations")
       .select("student_id,name")
-      .eq("id", params.id)
+      .eq("id", id)
       .maybeSingle();
 
-    if (!row) return NextResponse.json({ ok: true }); // 이미 없음
+    if (!row) return NextResponse.json({ ok: true });
     if ((row as any).student_id !== studentId || (row as any).name !== name) {
       return NextResponse.json({ error: "본인 예약만 취소할 수 있습니다." }, { status: 403 });
     }
 
-    const { error } = await sb.from("sds_reservations").delete().eq("id", params.id);
+    const { error } = await sb.from("sds_reservations").delete().eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
   } catch (e: any) {
