@@ -2,13 +2,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from "next/server";
+import { resolveAdmin } from "../../../../lib/adminAuth";
 
 export async function GET(req: Request) {
-  const cookieHeader =
-    (req as any).headers?.get?.("cookie") ??
-    (globalThis as any)?.next?.headers?.get?.("cookie") ??
-    "";
-
-  const has = typeof cookieHeader === "string" && cookieHeader.includes("sds_admin=1");
-  return NextResponse.json({ ok: !!has });
+  const s = await resolveAdmin(req);
+  if (!s) return NextResponse.json({ ok: false });
+  return NextResponse.json({ ok: true, email: s.email, name: s.name, role: s.role });
 }

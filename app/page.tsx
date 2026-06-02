@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 export default function Home() {
   const [currentScreen, setCurrentScreen] = useState(0);
@@ -64,25 +64,53 @@ export default function Home() {
   };
   const getReservationStatus = (roomId: string, date: Date, time: string) => reservations[roomId]?.[date.toDateString()]?.[time] || null;
 
-  const makeReservation = (roomId: string, date: Date, time: string) => {
+  const loadReservations = async () => {
+    try {
+      const r = await fetch('/api/reservations', { cache: 'no-store' });
+      if (!r.ok) return;
+      const rows = await r.json();
+      const nested: any = {};
+      (Array.isArray(rows) ? rows : []).forEach((x: any) => {
+        if (x.status === 'canceled') return;
+        const rid = x.roomId, dk = x.dateKey, tk = x.timeKey;
+        if (!rid || !dk || !tk) return;
+        if (!nested[rid]) nested[rid] = {};
+        if (!nested[rid][dk]) nested[rid][dk] = {};
+        nested[rid][dk][tk] = { _id: x._id, studentId: x.studentId, name: x.name, major: x.major, status: x.status, timestamp: x.createdAt };
+      });
+      setReservations(nested);
+    } catch {}
+  };
+  useEffect(() => {
+    loadReservations();
+    const t = setInterval(loadReservations, 8000);
+    return () => clearInterval(t);
+  }, []);
+
+  const makeReservation = async (roomId: string, date: Date, time: string) => {
     if (!userInfo.studentId || !userInfo.name) { alert('로그인이 필요합니다.'); return; }
     if (!userInfo.major) { setSelectedRoom(roomId); setSelectedTime(time); setShowUserForm(true); return; }
     const room = rooms.find(r => r.id === roomId);
     const dk = date.toDateString();
-    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-    const hour = parseInt(time.split(':')[0]);
-    const isDawn = hour >= 23 || hour < 7;
-    const needsApproval = room?.needsApproval || isWeekend || isDawn;
-    const nr = { studentId: userInfo.studentId, name: userInfo.name, major: userInfo.major, status: needsApproval ? 'pending' : 'approved', timestamp: new Date().toISOString() };
-    setReservations((prev: any) => ({ ...prev, [roomId]: { ...prev[roomId], [dk]: { ...prev[roomId]?.[dk], [time]: nr } } }));
+    try {
+      const res = await fetch('/api/reservations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, roomName: room?.name || roomId, dateKey: dk, timeKey: time, studentId: userInfo.studentId, name: userInfo.name, major: userInfo.major }),
+      });
+      if (res.status === 409) { alert('이미 예약된 시간입니다.'); await loadReservations(); return; }
+      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || '예약에 실패했습니다.'); return; }
+      await loadReservations();
+    } catch { alert('예약 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'); }
   };
-  const cancelReservation = (roomId: string, date: Date, time: string) => {
-    const dk = date.toDateString();
-    setReservations((prev: any) => {
-      const n = { ...prev };
-      if (n[roomId]?.[dk]) { delete n[roomId][dk][time]; if (Object.keys(n[roomId][dk]).length === 0) delete n[roomId][dk]; if (Object.keys(n[roomId]).length === 0) delete n[roomId]; }
-      return n;
-    });
+  const cancelReservation = async (resv: any) => {
+    if (!resv?._id) { await loadReservations(); return; }
+    try {
+      await fetch(`/api/reservations/${resv._id}`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId: userInfo.studentId, name: userInfo.name }),
+      });
+      await loadReservations();
+    } catch {}
   };
   const openCancelModal = (roomId: string, date: Date, time: string, r: any) => { setCancelTarget({ roomId, date, time, reservation: r }); setShowCancelModal(true); };
   const getMyReservations = () => {
@@ -169,6 +197,7 @@ export default function Home() {
 
   const renderLogin = () => (
     <div className="min-h-screen flex items-center justify-center bg-[#eef0f2] p-6">
+      <a href="/admin" target="_blank" rel="noopener noreferrer" className="fixed top-4 right-4 z-50 text-sm font-semibold text-[#16314f] bg-white border border-[#16314f] px-3 py-1.5 rounded-lg shadow-sm hover:bg-[#16314f] hover:text-white transition">관리자 로그인</a>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
         <img src="/logo.png" alt="SDS" className="w-40 mx-auto mb-4 rounded-xl" />
         <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">로그인</h1>
@@ -318,7 +347,7 @@ export default function Home() {
         )}
         <div className="flex gap-2">
           <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-[#16314f]">닫기</button>
-          <button onClick={() => { if (cancelTarget) { cancelReservation(cancelTarget.roomId, cancelTarget.date, cancelTarget.time); setShowCancelModal(false); setCancelTarget(null); } }} className="flex-1 px-4 py-2 bg-[#ef6644] text-white rounded-lg font-bold">취소하기</button>
+          <button onClick={() => { if (cancelTarget) { cancelReservation(cancelTarget.reservation); setShowCancelModal(false); setCancelTarget(null); } }} className="flex-1 px-4 py-2 bg-[#ef6644] text-white rounded-lg font-bold">취소하기</button>
         </div>
       </div>
     </div>
