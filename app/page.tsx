@@ -23,7 +23,7 @@ export default function Home() {
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
     { id: 'gwangA', name: '광개토관 A', type: 'approval', needsApproval: true },
-    { id: 'gwangB', name: '광개토관 B', type: 'open', needsApproval: false },
+    { id: 'gwangB', name: '스튜디오B', type: 'approval', needsApproval: true },
     { id: 'gwangC', name: '광개토관 C', type: 'open', needsApproval: false },
     { id: 'saenalB', name: '새날관 B', type: 'approval', needsApproval: true },
     { id: 'saenalC', name: '새날관 C', type: 'open', needsApproval: false },
