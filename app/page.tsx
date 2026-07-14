@@ -177,6 +177,23 @@ export default function Home() {
   const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
   const onTouchEnd = () => { if (!touchStart || !touchEnd) return; const d = touchStart - touchEnd; if (d > 50) handleSwipe('left'); if (d < -50) handleSwipe('right'); };
 
+  const [shareMsg, setShareMsg] = useState('');
+  const shareApp = async () => {
+    const url = window.location.origin;
+    const data = { title: '세종댄스스페이스', text: '세종대 무용 연습실 예약 앱 - 세종댄스스페이스', url };
+    try {
+      if (navigator.share) {
+        await navigator.share(data);
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareMsg('링크가 복사되었습니다!');
+        setTimeout(() => setShareMsg(''), 2500);
+      }
+    } catch {
+      // 사용자가 공유창을 닫은 경우 등: 무시
+    }
+  };
+
   // ---------- 화면 ----------
   const TopRightLogo = () => (
     <div className="fixed top-3 right-3 z-40 bg-white/80 rounded-lg p-1 shadow-sm">
@@ -214,6 +231,7 @@ export default function Home() {
           </div>
           <div className="border-t pt-3 mt-2">
             <button onClick={() => { setCurrentScreen(-1); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#16314f] hover:bg-gray-50">내 예약 현황</button>
+            <button onClick={() => { shareApp(); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#16314f] hover:bg-gray-50">📤 앱 공유하기</button>
             <button onClick={() => { signOut(); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#ef6644] hover:bg-orange-50">로그아웃</button>
           </div>
         </div>
@@ -246,6 +264,11 @@ export default function Home() {
         </button>
       )}
       <p className="mt-3 text-xs text-gray-400">구글 계정으로 본인 확인 후 이용할 수 있습니다</p>
+      <button onClick={shareApp}
+        className="mt-6 flex items-center gap-2 text-sm font-semibold text-[#16314f] bg-white border border-gray-200 px-5 py-2.5 rounded-xl shadow-sm hover:border-[#16314f] transition">
+        <span className="text-base">📤</span> 앱 공유하기
+      </button>
+      {shareMsg && <p className="mt-2 text-xs font-semibold text-[#ef6644]">{shareMsg}</p>}
     </div>
   );
 
