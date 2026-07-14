@@ -8,7 +8,7 @@ import { resolveAdmin } from "../../../../lib/adminAuth";
 // 로그인한 관리자라면 누구나 승인 기록(로그)을 볼 수 있다.
 export async function GET(req: Request) {
   try {
-    const s = await resolveAdmin(req);
+    const s = await resolveAdmin();
     if (!s) return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 401 });
 
     const sb = getSupabase();

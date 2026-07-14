@@ -1,22 +1,27 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 
 type Row = {
-  _id: string;
-  roomId: string; roomName: string;
+  _id: string; roomId: string; roomName: string;
   dateKey: string; timeKey: string;
-  studentId: string; name: string; major: string;
-  capacity: number;
+  studentId: string; name: string; major: string; capacity: number;
   status: "pending" | "approved" | "rejected" | "canceled";
   decidedBy?: string; decidedByName?: string; decidedAt?: string;
 };
-type Me = { ok: boolean; email?: string; name?: string; role?: "master" | "admin" };
-type AdminRow = {
-  _id: string; email: string; name: string; role: string;
-  status: "pending" | "approved" | "rejected";
-  createdAt?: string; approvedBy?: string | null; approvedAt?: string | null;
+type Me = {
+  signedIn: boolean; ok: boolean;
+  email?: string; name?: string;
+  role?: "master" | "admin";
+  status?: "none" | "pending" | "approved" | "rejected";
 };
+type AdminRow = { _id: string; email: string; name: string; status: string };
 type LogRow = { _id: string; actorEmail: string; actorName: string; action: string; target: string; createdAt: string };
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 async function readJSON<T>(res: Response, fallback: T): Promise<T> {
   const t = await res.text();
@@ -30,73 +35,101 @@ function fmtTime(iso?: string) {
 
 export default function AdminPage() {
   const [me, setMe] = useState<Me | null>(null);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
   const checkMe = async () => {
     const r = await fetch("/api/admin/check", { cache: "no-store" });
-    const j = await readJSON<Me>(r, { ok: false });
+    const j = await readJSON<Me>(r, { signedIn: false, ok: false });
     setMe(j);
-    return j;
   };
   useEffect(() => { checkMe(); }, []);
 
-  const doLogin = async () => {
+  const signInGoogle = async () => {
+    setBusy(true);
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=/admin` },
+    });
+  };
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    await checkMe();
+  };
+  const requestApproval = async () => {
     setBusy(true); setMsg("");
     try {
-      const r = await fetch("/api/admin/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const r = await fetch("/api/admin/register", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: me?.name }),
+      });
       const j = await readJSON<any>(r, {});
-      if (!r.ok || !j.ok) { setMsg(j.error || "로그인에 실패했습니다."); return; }
-      setEmail(""); setName(""); setMsg("");
+      if (!r.ok || !j.ok) { setMsg(j.error || "승인 요청에 실패했습니다."); return; }
+      setMsg("승인 요청이 접수되었습니다. 마스터 승인을 기다려 주세요.");
       await checkMe();
     } finally { setBusy(false); }
   };
-  const doRegister = async () => {
-    setBusy(true); setMsg("");
-    try {
-      const r = await fetch("/api/admin/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, name }) });
-      const j = await readJSON<any>(r, {});
-      if (!r.ok || !j.ok) { setMsg(j.error || "등록 신청에 실패했습니다."); return; }
-      setMsg("등록 신청이 접수되었습니다. 마스터 승인 후 로그인할 수 있습니다.");
-      setMode("login"); setName("");
-    } finally { setBusy(false); }
-  };
-  const doLogout = async () => { await fetch("/api/admin/login", { method: "DELETE" }); setMe({ ok: false }); };
 
   if (!me) return <div className="p-6 text-center text-gray-500">불러오는 중…</div>;
 
-  if (!me.ok) {
+  // 1) 구글 로그인 전
+  if (!me.signedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
-        <div className="bg-white rounded-2xl shadow p-6 w-full max-w-sm">
-          <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">관리자 {mode === "login" ? "로그인" : "등록 신청"}</h1>
-          <p className="text-center text-gray-500 text-sm mb-5">{mode === "login" ? "승인된 관리자 이메일로 로그인하세요" : "이름·이메일을 남기면 마스터가 승인합니다"}</p>
-          {mode === "register" && (
-            <label className="block mb-3">
-              <span className="text-sm text-[#16314f]">이름</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} className="w-full mt-1 p-3 border rounded-lg text-[#16314f] outline-none focus:ring-2 focus:ring-[#ef6644]" placeholder="예: 김민수" />
-            </label>
-          )}
-          <label className="block mb-4">
-            <span className="text-sm text-[#16314f]">이메일</span>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full mt-1 p-3 border rounded-lg text-[#16314f] outline-none focus:ring-2 focus:ring-[#ef6644]" placeholder="예: admin@gmail.com" onKeyDown={(e) => { if (e.key === "Enter" && mode === "login") doLogin(); }} />
-          </label>
-          {msg && <p className="text-sm mb-3 text-center text-[#ef6644]">{msg}</p>}
-          <button onClick={mode === "login" ? doLogin : doRegister} disabled={busy} className="w-full py-3 rounded-lg bg-[#16314f] text-white font-bold disabled:opacity-50">{busy ? "처리 중…" : (mode === "login" ? "로그인" : "승인 요청")}</button>
-          <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setMsg(""); }} className="w-full mt-3 text-sm text-[#16314f] underline">{mode === "login" ? "관리자 등록 신청하기" : "로그인 화면으로 돌아가기"}</button>
-          <a href="/" className="block w-full mt-2 text-center text-xs text-gray-400">← 예약 페이지로</a>
-        </div>
-      </div>
+      <Shell>
+        <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">관리자 로그인</h1>
+        <p className="text-center text-gray-500 text-sm mb-6">구글 계정으로 안전하게 로그인합니다</p>
+        <button onClick={signInGoogle} disabled={busy}
+          className="w-full py-3 rounded-lg border-2 border-[#16314f] text-[#16314f] font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+          <span className="text-lg">G</span> {busy ? "이동 중…" : "구글로 로그인"}
+        </button>
+        <a href="/" className="block w-full mt-4 text-center text-xs text-gray-400">← 예약 페이지로</a>
+      </Shell>
     );
   }
 
-  return <Dashboard me={me} onLogout={doLogout} />;
+  // 2) 로그인했지만 관리자 아님
+  if (!me.ok) {
+    return (
+      <Shell>
+        <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">관리자 승인 요청</h1>
+        <p className="text-center text-gray-500 text-sm mb-4">{me.name}<br/><span className="text-xs">{me.email}</span></p>
+
+        {me.status === "pending" && (
+          <div className="bg-orange-50 text-orange-700 text-sm rounded-lg p-4 text-center mb-4">
+            승인 대기 중입니다.<br/>마스터 관리자의 승인 후 이용할 수 있습니다.
+          </div>
+        )}
+        {me.status === "rejected" && (
+          <div className="bg-red-50 text-red-700 text-sm rounded-lg p-4 text-center mb-4">
+            관리자 등록이 거절되었습니다.<br/>다시 요청할 수 있습니다.
+          </div>
+        )}
+        {msg && <p className="text-sm mb-3 text-center text-[#ef6644]">{msg}</p>}
+
+        {me.status !== "pending" && (
+          <button onClick={requestApproval} disabled={busy}
+            className="w-full py-3 rounded-lg bg-[#16314f] text-white font-bold disabled:opacity-50">
+            {busy ? "처리 중…" : "관리자 승인 요청"}
+          </button>
+        )}
+        <button onClick={signOut} className="w-full mt-3 text-sm text-gray-500 underline">다른 계정으로 로그인</button>
+        <a href="/" className="block w-full mt-2 text-center text-xs text-gray-400">← 예약 페이지로</a>
+      </Shell>
+    );
+  }
+
+  return <Dashboard me={me} onSignOut={signOut} />;
 }
 
-function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-gray-50">
+      <div className="bg-white rounded-2xl shadow p-6 w-full max-w-sm">{children}</div>
+    </div>
+  );
+}
+
+function Dashboard({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [items, setItems] = useState<Row[]>([]);
   const [q, setQ] = useState({ text: "", status: "" });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -116,8 +149,11 @@ function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
   }, [q.text, q.status]);
 
   const setStatus = async (id: string, status: Row["status"]) => {
-    const r = await fetch(`/api/reservations/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-    if (r.status === 401) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); onLogout(); return; }
+    const r = await fetch(`/api/reservations/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (r.status === 401) { alert("세션이 만료되었습니다. 다시 로그인해 주세요."); onSignOut(); return; }
     await r.text(); await load();
   };
 
@@ -139,7 +175,7 @@ function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
         <div className="flex items-center gap-3 text-sm">
           <span className="text-gray-600">{me.name} {me.role === "master" ? "· 마스터" : "· 관리자"}</span>
           <a href="/" className="px-3 py-1.5 rounded-lg border text-[#16314f]">예약 페이지</a>
-          <button onClick={onLogout} className="px-3 py-1.5 rounded-lg border">로그아웃</button>
+          <button onClick={onSignOut} className="px-3 py-1.5 rounded-lg border">로그아웃</button>
         </div>
       </div>
 
@@ -148,7 +184,7 @@ function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
       <div className="bg-white p-4 rounded-xl shadow mb-4 grid md:grid-cols-5 gap-3">
         <input placeholder="이름 또는 학번 검색" className="p-3 border rounded-lg text-gray-900 placeholder-gray-400" value={q.text} onChange={(e) => setQ({ ...q, text: e.target.value })} />
         <select className="p-3 border rounded-lg text-gray-900" value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })}>
-          <option value="">상태(전체)</option><option value="pending">대기</option><option value="approved">승인</option><option value="rejected">거절</option><option value="canceled">취소</option>
+          <option value="">상태(전체)</option><option value="pending">대기</option><option value="approved">승인</option><option value="rejected">거절</option>
         </select>
         <button onClick={load} className="p-3 rounded-lg bg-purple-600 text-white">검색</button>
         <button onClick={() => { setQ({ text: "", status: "" }); load(); }} className="p-3 rounded-lg border">초기화</button>
@@ -180,7 +216,7 @@ function Dashboard({ me, onLogout }: { me: Me; onLogout: () => void }) {
       </section>
 
       <section className="mb-8">
-        <h2 className="font-semibold mb-2">처리 완료 / 기타</h2>
+        <h2 className="font-semibold mb-2">처리 완료</h2>
         <div className="overflow-x-auto bg-white rounded-xl shadow">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50"><tr>
@@ -216,13 +252,15 @@ function AdminManager({ me }: { me: Me }) {
 
   const load = async () => {
     const r = await fetch("/api/admin/admins", { cache: "no-store" });
-    const j = await readJSON<{ masters: string[]; admins: AdminRow[] }>(r, { masters: [], admins: [] });
-    setData(j);
+    setData(await readJSON<{ masters: string[]; admins: AdminRow[] }>(r, { masters: [], admins: [] }));
   };
   useEffect(() => { load(); }, []);
 
   const decide = async (id: string, action: "approve" | "reject") => {
-    const r = await fetch(`/api/admin/admins/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const r = await fetch(`/api/admin/admins/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
     await r.text(); await load();
   };
 
@@ -260,7 +298,6 @@ function AdminManager({ me }: { me: Me }) {
             <ul className="text-sm space-y-1">
               {(data?.masters || []).map((m) => <li key={m} className="text-gray-700">👑 {m} <span className="text-xs text-gray-400">(마스터)</span></li>)}
               {approved.map((a) => <li key={a._id} className="text-gray-700">{a.name} · {a.email}</li>)}
-              {(!data || ((data.masters || []).length === 0 && approved.length === 0)) && <li className="text-gray-500">없음</li>}
             </ul>
           </div>
         </div>

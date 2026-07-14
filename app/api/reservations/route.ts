@@ -3,8 +3,9 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from "next/server";
 import { getSupabase } from "../../../lib/supabase";
+import { createAuthClient } from "../../../lib/supabaseAuth";
 
-// 승인이 필요한 예약인지 판정: 승인필요 연습실 / 새벽(23~07) / 주말
+// 승인이 필요한 예약인지: 승인필요 연습실 / 새벽(23~07) / 주말
 function needsApproval(roomId: string, dateKey: string, timeKey: string) {
   const approvalRooms = ["gwangA", "gwangB", "saenalB", "daeyangHall"];
   const hour = parseInt(timeKey.split(":")[0], 10);
@@ -21,25 +22,32 @@ function needsApproval(roomId: string, dateKey: string, timeKey: string) {
 function toRes(r: any) {
   return {
     _id: r.id,
-    roomId: r.room_id,
-    roomName: r.room_name,
-    dateKey: r.date_key,
-    timeKey: r.time_key,
-    studentId: r.student_id,
-    name: r.name,
-    major: r.major ?? "",
+    roomId: r.room_id, roomName: r.room_name,
+    dateKey: r.date_key, timeKey: r.time_key,
+    studentId: r.student_id, name: r.name, major: r.major ?? "",
     capacity: r.capacity ?? 1,
     status: r.status,
+    userId: r.user_id ?? null,
     decidedBy: r.decided_by ?? undefined,
     decidedByName: r.decided_by_name ?? undefined,
     decidedAt: r.decided_at ?? undefined,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
+    createdAt: r.created_at, updatedAt: r.updated_at,
   };
 }
 
+async function getAuthedUser() {
+  const supabase = await createAuthClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data?.user) return null;
+  return data.user;
+}
+
+// 로그인한 사용자만 예약 현황을 볼 수 있다 (개인정보 보호)
 export async function GET(req: Request) {
   try {
+    const user = await getAuthedUser();
+    if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+
     const { searchParams } = new URL(req.url);
     const name = searchParams.get("name")?.trim();
     const studentId = searchParams.get("studentId")?.trim();
@@ -67,25 +75,30 @@ export async function GET(req: Request) {
   }
 }
 
+// 예약 생성: 신원은 클라이언트가 아니라 서버가 프로필에서 가져온다 (도용 불가)
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const required = ["roomId", "roomName", "dateKey", "timeKey", "studentId", "name"];
-    for (const k of required) {
-      if (body[k] === undefined || body[k] === null || String(body[k]).trim() === "") {
-        return NextResponse.json({ error: `Missing ${k}` }, { status: 400 });
-      }
-    }
-
-    const roomId = String(body.roomId);
-    const dateKey = String(body.dateKey);
-    const timeKey = String(body.timeKey);
-    const capacity = Math.max(1, parseInt(String(body.capacity ?? "1"), 10) || 1);
-    const major = typeof body.major === "string" ? body.major : "";
+    const user = await getAuthedUser();
+    if (!user) return NextResponse.json({ error: "구글 로그인이 필요합니다." }, { status: 401 });
 
     const sb = getSupabase();
+    const { data: p } = await sb
+      .from("sds_profiles")
+      .select("name,student_id,major")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (!p) return NextResponse.json({ error: "프로필 등록이 필요합니다." }, { status: 403 });
 
-    // 같은 방·날짜·시간에 살아있는 예약이 있으면 거부
+    const body = await req.json();
+    const roomId = String(body.roomId || "");
+    const roomName = String(body.roomName || "");
+    const dateKey = String(body.dateKey || "");
+    const timeKey = String(body.timeKey || "");
+    if (!roomId || !roomName || !dateKey || !timeKey) {
+      return NextResponse.json({ error: "요청이 올바르지 않습니다." }, { status: 400 });
+    }
+
+    // 같은 방·날짜·시간 중복 방지
     const { data: dup } = await sb
       .from("sds_reservations")
       .select("id")
@@ -99,14 +112,15 @@ export async function POST(req: Request) {
     }
 
     const row = {
+      user_id: user.id,
       room_id: roomId,
-      room_name: String(body.roomName),
+      room_name: roomName,
       date_key: dateKey,
       time_key: timeKey,
-      student_id: String(body.studentId).trim(),
-      name: String(body.name).trim(),
-      major,
-      capacity,
+      student_id: (p as any).student_id,
+      name: (p as any).name,
+      major: (p as any).major || "",
+      capacity: 1,
       status: needsApproval(roomId, dateKey, timeKey) ? "pending" : "approved",
     };
 

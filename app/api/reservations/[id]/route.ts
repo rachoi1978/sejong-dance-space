@@ -4,16 +4,17 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from "next/server";
 import { getSupabase } from "../../../../lib/supabase";
 import { resolveAdmin } from "../../../../lib/adminAuth";
+import { createAuthClient } from "../../../../lib/supabaseAuth";
 import { logAction } from "../../../../lib/audit";
 
-// 관리자: 예약 승인/거절/수정 (승인자 기록 + 로그)
+// 관리자: 예약 승인/거절 (승인자 기록 + 로그)
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
 
     const admin = await resolveAdmin();
     if (!admin) {
-      return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 401 });
+      return NextResponse.json({ error: "관리자 권한이 필요합니다." }, { status: 401 });
     }
 
     const body = await req.json();
@@ -32,10 +33,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         decision = body.status;
       }
     }
-    if (body.capacity !== undefined) patch.capacity = Math.max(1, parseInt(String(body.capacity), 10) || 1);
-    if (typeof body.major === "string") patch.major = body.major;
-    if (typeof body.name === "string") patch.name = body.name;
-    if (typeof body.studentId === "string") patch.student_id = body.studentId;
 
     const sb = getSupabase();
     const { error } = await sb.from("sds_reservations").update(patch).eq("id", id);
@@ -59,23 +56,24 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   }
 }
 
-// 학생: 본인 예약 취소 (학번+이름 일치 시). 관리자 로그인 불필요.
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+// 본인 예약 취소: 로그인 사용자와 예약의 user_id가 일치해야 함 (도용 불가)
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await ctx.params;
-    const body = await req.json().catch(() => ({}));
-    const studentId = String(body.studentId || "").trim();
-    const name = String(body.name || "").trim();
+
+    const supabase = await createAuthClient();
+    const { data: u } = await supabase.auth.getUser();
+    if (!u?.user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
     const sb = getSupabase();
     const { data: row } = await sb
       .from("sds_reservations")
-      .select("student_id,name")
+      .select("user_id")
       .eq("id", id)
       .maybeSingle();
 
     if (!row) return NextResponse.json({ ok: true });
-    if ((row as any).student_id !== studentId || (row as any).name !== name) {
+    if ((row as any).user_id !== u.user.id) {
       return NextResponse.json({ error: "본인 예약만 취소할 수 있습니다." }, { status: 403 });
     }
 

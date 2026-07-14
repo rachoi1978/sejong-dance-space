@@ -21,7 +21,7 @@ function toAdmin(a: any) {
 // 로그인한 관리자라면 누구나 관리자 목록을 볼 수 있다(서로 열람 가능).
 export async function GET(req: Request) {
   try {
-    const s = await resolveAdmin(req);
+    const s = await resolveAdmin();
     if (!s) return NextResponse.json({ error: "관리자 로그인이 필요합니다." }, { status: 401 });
 
     const sb = getSupabase();

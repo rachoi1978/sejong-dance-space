@@ -1,24 +1,33 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export default function Home() {
+  const [authChecked, setAuthChecked] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [email, setEmail] = useState('');
+  const [profile, setProfile] = useState<{ name: string; studentId: string; major: string } | null>(null);
+  const [profileForm, setProfileForm] = useState({ name: '', studentId: '', major: '' });
+  const [profileMsg, setProfileMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
   const [currentScreen, setCurrentScreen] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [reservations, setReservations] = useState<any>({});
-  const [userInfo, setUserInfo] = useState({ studentId: '', name: '', major: '' });
-  const [showUserForm, setShowUserForm] = useState(false);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<any>(null);
   const [agreed, setAgreed] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
-  const [loginForm, setLoginForm] = useState({ studentId: '', name: '' });
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [ranking, setRanking] = useState<any[]>([]);
 
   const rooms = [
     { id: 'ranking', name: '세종연습왕 TOP10', type: 'ranking', needsApproval: false },
@@ -31,42 +40,52 @@ export default function Home() {
     { id: 'saenalE', name: '새날관 E', type: 'open', needsApproval: false },
     { id: 'daeyangHall', name: '대양AI 다목적홀', type: 'approval', needsApproval: true }
   ];
-  // 실제 연습실 목록 (맨 앞 ranking 제외). 화면번호: 1=랭킹, 2부터 연습실(2=광개토A)
   const practiceRooms = rooms.slice(1);
   const timeSlots = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00'];
-  const topUsers = [
-    { rank: 1, name: '김민수', studentId: '20210001', major: '실용무용전공', hours: 120 },
-    { rank: 2, name: '이지은', studentId: '20210002', major: 'K-POP댄스전공', hours: 115 },
-    { rank: 3, name: '박서준', studentId: '20200003', major: '실용무용전공', hours: 110 },
-    { rank: 4, name: '최유나', studentId: '20210004', major: '발레전공', hours: 105 },
-    { rank: 5, name: '정다현', studentId: '20190005', major: '현대무용전공', hours: 98 },
-    { rank: 6, name: '김태현', studentId: '20210006', major: 'K-POP댄스전공', hours: 95 },
-    { rank: 7, name: '이소영', studentId: '20200007', major: '실용무용전공', hours: 92 },
-    { rank: 8, name: '박지훈', studentId: '20210008', major: '힙합댄스전공', hours: 88 },
-    { rank: 9, name: '한예슬', studentId: '20200009', major: '발레전공', hours: 85 },
-    { rank: 10, name: '윤성호', studentId: '20210010', major: '현대무용전공', hours: 82 }
-  ];
 
-  const handleSwipe = (dir: 'left' | 'right') => {
-    const maxScreen = 1 + practiceRooms.length; // 1=랭킹, 그 뒤로 연습실
-    if (dir === 'left' && currentScreen < maxScreen) setCurrentScreen(currentScreen + 1);
-    else if (dir === 'right' && currentScreen > 1) setCurrentScreen(currentScreen - 1);
+  // ---------- 인증/프로필 ----------
+  const loadMe = async () => {
+    try {
+      const r = await fetch('/api/profile', { cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      setSignedIn(!!j.signedIn);
+      setEmail(j.email || '');
+      setProfile(j.profile || null);
+    } catch {
+      setSignedIn(false); setProfile(null);
+    } finally {
+      setAuthChecked(true);
+    }
   };
-  const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
-  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
-  const onTouchEnd = () => { if (!touchStart || !touchEnd) return; const d = touchStart - touchEnd; if (d > 50) handleSwipe('left'); if (d < -50) handleSwipe('right'); };
+  useEffect(() => { loadMe(); }, []);
 
-  const formatDate = (date: Date) => date.toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-  const getDaysInMonth = (date: Date) => {
-    const y = date.getFullYear(), m = date.getMonth();
-    const last = new Date(y, m + 1, 0).getDate(), start = new Date(y, m, 1).getDay();
-    const days: (Date | null)[] = [];
-    for (let i = 0; i < start; i++) days.push(null);
-    for (let d = 1; d <= last; d++) days.push(new Date(y, m, d));
-    return days;
+  const signInGoogle = async () => {
+    setBusy(true);
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=/` },
+    });
   };
-  const getReservationStatus = (roomId: string, date: Date, time: string) => reservations[roomId]?.[date.toDateString()]?.[time] || null;
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setSignedIn(false); setProfile(null); setEmail('');
+    setCurrentScreen(0); setAgreed(false);
+  };
+  const submitProfile = async () => {
+    setBusy(true); setProfileMsg('');
+    try {
+      const r = await fetch('/api/profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileForm),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) { setProfileMsg(j.error || '등록에 실패했습니다.'); return; }
+      setProfile(j.profile);
+      setCurrentScreen(1);
+    } finally { setBusy(false); }
+  };
 
+  // ---------- 데이터 ----------
   const loadReservations = async () => {
     try {
       const r = await fetch('/api/reservations', { cache: 'no-store' });
@@ -79,26 +98,33 @@ export default function Home() {
         if (!rid || !dk || !tk) return;
         if (!nested[rid]) nested[rid] = {};
         if (!nested[rid][dk]) nested[rid][dk] = {};
-        nested[rid][dk][tk] = { _id: x._id, studentId: x.studentId, name: x.name, major: x.major, status: x.status, timestamp: x.createdAt };
+        nested[rid][dk][tk] = { _id: x._id, studentId: x.studentId, name: x.name, major: x.major, status: x.status };
       });
       setReservations(nested);
     } catch {}
   };
+  const loadRanking = async () => {
+    try {
+      const r = await fetch('/api/ranking', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      setRanking(Array.isArray(j.ranking) ? j.ranking : []);
+    } catch {}
+  };
   useEffect(() => {
-    loadReservations();
-    const t = setInterval(loadReservations, 8000);
+    if (!signedIn || !profile) return;
+    loadReservations(); loadRanking();
+    const t = setInterval(() => { loadReservations(); loadRanking(); }, 8000);
     return () => clearInterval(t);
-  }, []);
+  }, [signedIn, profile]);
 
+  // ---------- 예약/취소 ----------
   const makeReservation = async (roomId: string, date: Date, time: string) => {
-    if (!userInfo.studentId || !userInfo.name) { alert('로그인이 필요합니다.'); return; }
-    if (!userInfo.major) { setSelectedRoom(roomId); setSelectedTime(time); setShowUserForm(true); return; }
     const room = rooms.find(r => r.id === roomId);
-    const dk = date.toDateString();
     try {
       const res = await fetch('/api/reservations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, roomName: room?.name || roomId, dateKey: dk, timeKey: time, studentId: userInfo.studentId, name: userInfo.name, major: userInfo.major }),
+        body: JSON.stringify({ roomId, roomName: room?.name || roomId, dateKey: date.toDateString(), timeKey: time }),
       });
       if (res.status === 409) { alert('이미 예약된 시간입니다.'); await loadReservations(); return; }
       if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || '예약에 실패했습니다.'); return; }
@@ -108,20 +134,31 @@ export default function Home() {
   const cancelReservation = async (resv: any) => {
     if (!resv?._id) { await loadReservations(); return; }
     try {
-      await fetch(`/api/reservations/${resv._id}`, {
-        method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentId: userInfo.studentId, name: userInfo.name }),
-      });
+      const r = await fetch(`/api/reservations/${resv._id}`, { method: 'DELETE' });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || '취소에 실패했습니다.'); }
       await loadReservations();
     } catch {}
   };
   const openCancelModal = (roomId: string, date: Date, time: string, r: any) => { setCancelTarget({ roomId, date, time, reservation: r }); setShowCancelModal(true); };
+
+  // ---------- 유틸 ----------
+  const formatDate = (date: Date) => date.toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+  const getDaysInMonth = (date: Date) => {
+    const y = date.getFullYear(), m = date.getMonth();
+    const last = new Date(y, m + 1, 0).getDate(), start = new Date(y, m, 1).getDay();
+    const days: (Date | null)[] = [];
+    for (let i = 0; i < start; i++) days.push(null);
+    for (let d = 1; d <= last; d++) days.push(new Date(y, m, d));
+    return days;
+  };
+  const getReservationStatus = (roomId: string, date: Date, time: string) => reservations[roomId]?.[date.toDateString()]?.[time] || null;
   const getMyReservations = () => {
+    if (!profile) return [];
     const list: any[] = [];
     Object.entries(reservations).forEach(([roomId, rr]) => {
       Object.entries(rr as any).forEach(([date, dr]) => {
         Object.entries(dr as any).forEach(([time, r]) => {
-          if ((r as any).studentId === userInfo.studentId && (r as any).name === userInfo.name) {
+          if ((r as any).studentId === profile.studentId) {
             const room = rooms.find(x => x.id === roomId);
             list.push({ roomId, roomName: room?.name || roomId, date: new Date(date), time, ...(r as any) });
           }
@@ -130,9 +167,17 @@ export default function Home() {
     });
     return list.sort((a, b) => a.date.getTime() - b.date.getTime());
   };
-  const handleLogin = () => { if (loginForm.studentId.trim() && loginForm.name.trim()) { setUserInfo({ studentId: loginForm.studentId.trim(), name: loginForm.name.trim(), major: '' }); setShowLogin(false); setCurrentScreen(1); } };
-  const handleLogout = () => { setUserInfo({ studentId:'', name:'', major:'' }); setCurrentScreen(0); };
 
+  const handleSwipe = (dir: 'left' | 'right') => {
+    const maxScreen = 1 + practiceRooms.length;
+    if (dir === 'left' && currentScreen < maxScreen) setCurrentScreen(currentScreen + 1);
+    else if (dir === 'right' && currentScreen > 1) setCurrentScreen(currentScreen - 1);
+  };
+  const onTouchStart = (e: React.TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
+  const onTouchMove = (e: React.TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchEnd = () => { if (!touchStart || !touchEnd) return; const d = touchStart - touchEnd; if (d > 50) handleSwipe('left'); if (d < -50) handleSwipe('right'); };
+
+  // ---------- 화면 ----------
   const TopRightLogo = () => (
     <div className="fixed top-3 right-3 z-40 bg-white/80 rounded-lg p-1 shadow-sm">
       <img src="/logo.png" alt="SDS" className="h-9 w-auto rounded" />
@@ -151,12 +196,11 @@ export default function Home() {
       {showMenu && (
         <div className="absolute top-16 left-0 bg-white rounded-xl shadow-2xl p-4 w-72 border max-h-[70vh] overflow-y-auto">
           <h3 className="font-extrabold text-[#16314f] mb-3 text-lg">메뉴</h3>
+          <div className="px-3 py-2 mb-2 bg-[#f7f8fa] rounded-lg text-sm text-[#16314f]">
+            <b>{profile?.name}</b> · {profile?.studentId}
+            <p className="text-xs text-gray-400 mt-0.5">{email}</p>
+          </div>
           <button onClick={() => { setCurrentScreen(0); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg mb-1 font-semibold text-[#16314f] hover:bg-gray-50">홈</button>
-          {userInfo.name ? (
-            <button onClick={() => { handleLogout(); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg mb-1 font-semibold text-[#ef6644] hover:bg-orange-50">로그아웃 ({userInfo.name})</button>
-          ) : (
-            <button onClick={() => { setShowLogin(true); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg mb-1 font-semibold text-[#16314f] hover:bg-gray-50">로그인</button>
-          )}
           <button onClick={() => { setCurrentScreen(1); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg mb-1 font-semibold text-[#16314f] hover:bg-gray-50">TOP10 랭킹</button>
           <div className="border-t pt-3 mt-2">
             <h4 className="text-xs font-bold text-gray-400 mb-2">연습실</h4>
@@ -168,18 +212,19 @@ export default function Home() {
               </button>
             ))}
           </div>
-          {userInfo.name && (
-            <div className="border-t pt-3 mt-2">
-              <button onClick={() => { setCurrentScreen(-1); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#16314f] hover:bg-gray-50">내 예약 현황</button>
-            </div>
-          )}
+          <div className="border-t pt-3 mt-2">
+            <button onClick={() => { setCurrentScreen(-1); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#16314f] hover:bg-gray-50">내 예약 현황</button>
+            <button onClick={() => { signOut(); setShowMenu(false); }} className="w-full text-left p-3 rounded-lg font-semibold text-[#ef6644] hover:bg-orange-50">로그아웃</button>
+          </div>
         </div>
       )}
     </div>
   );
 
-  const renderMain = () => (
+  // 로그인 전 첫 화면: 이용안내 + 동의 + 구글 로그인
+  const renderWelcome = () => (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#eef0f2] p-6">
+      <a href="/admin" className="fixed top-4 right-4 z-50 text-sm font-semibold text-[#16314f] bg-white border border-[#16314f] px-3 py-1.5 rounded-lg shadow-sm hover:bg-[#16314f] hover:text-white transition">관리자 페이지</a>
       <img src="/logo.png" alt="SEJONG DANCE SPACE" className="w-64 max-w-[80%] mb-8 rounded-2xl shadow-sm" />
       <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 max-w-md w-full">
         <h3 className="text-base font-extrabold text-[#16314f] mb-3">이용 안내</h3>
@@ -194,32 +239,57 @@ export default function Home() {
           위 내용에 동의합니다
         </label>
       </div>
-      {agreed && <button onClick={() => setShowLogin(true)} className="bg-[#16314f] text-white px-10 py-3 rounded-xl text-lg font-bold hover:bg-[#1e436b] transition">시작하기</button>}
+      {agreed && (
+        <button onClick={signInGoogle} disabled={busy}
+          className="bg-[#16314f] text-white px-10 py-3 rounded-xl text-lg font-bold hover:bg-[#1e436b] transition disabled:opacity-50">
+          {busy ? '이동 중…' : 'G  구글로 시작하기'}
+        </button>
+      )}
+      <p className="mt-3 text-xs text-gray-400">구글 계정으로 본인 확인 후 이용할 수 있습니다</p>
     </div>
   );
 
-  const renderLogin = () => (
+  // 최초 1회: 실명·학번·전공 등록
+  const renderProfileSetup = () => (
     <div className="min-h-screen flex items-center justify-center bg-[#eef0f2] p-6">
-      <a href="/admin" target="_blank" rel="noopener noreferrer" className="fixed top-4 right-4 z-50 text-sm font-semibold text-[#16314f] bg-white border border-[#16314f] px-3 py-1.5 rounded-lg shadow-sm hover:bg-[#16314f] hover:text-white transition">관리자 로그인</a>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
         <img src="/logo.png" alt="SDS" className="w-40 mx-auto mb-4 rounded-xl" />
-        <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">로그인</h1>
-        <p className="text-center text-gray-500 text-sm mb-6">학번과 이름을 입력해 주세요</p>
+        <h1 className="text-xl font-extrabold text-center text-[#16314f] mb-1">이용자 등록</h1>
+        <p className="text-center text-gray-500 text-sm mb-1">최초 1회만 등록하면 됩니다</p>
+        <p className="text-center text-xs text-gray-400 mb-5">{email}</p>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-[#16314f] mb-1">학번</label>
-            <input type="text" value={loginForm.studentId} onChange={(e) => setLoginForm({ ...loginForm, studentId: e.target.value })} className="w-full p-3 border rounded-lg text-[#16314f] focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 20210001" />
+            <label className="block text-sm font-semibold text-[#16314f] mb-1">이름 (실명)</label>
+            <input type="text" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} className="w-full p-3 border rounded-lg text-[#16314f] focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 김민수" />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-[#16314f] mb-1">이름</label>
-            <input type="text" value={loginForm.name} onChange={(e) => setLoginForm({ ...loginForm, name: e.target.value })} className="w-full p-3 border rounded-lg text-[#16314f] focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 김민수" />
+            <label className="block text-sm font-semibold text-[#16314f] mb-1">학번</label>
+            <input type="text" inputMode="numeric" value={profileForm.studentId} onChange={(e) => setProfileForm({ ...profileForm, studentId: e.target.value })} className="w-full p-3 border rounded-lg text-[#16314f] focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 20210001" />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-[#16314f] mb-1">세부전공</label>
+            <input type="text" value={profileForm.major} onChange={(e) => setProfileForm({ ...profileForm, major: e.target.value })} className="w-full p-3 border rounded-lg text-[#16314f] focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 실용무용전공" />
           </div>
         </div>
-        <div className="flex gap-2 mt-6">
-          <button onClick={() => setShowLogin(false)} className="flex-1 px-4 py-2 border rounded-lg text-[#16314f]">취소</button>
-          <button onClick={handleLogin} disabled={!loginForm.studentId.trim() || !loginForm.name.trim()} className={`flex-1 px-4 py-2 rounded-lg font-bold ${loginForm.studentId.trim() && loginForm.name.trim() ? 'bg-[#16314f] text-white' : 'bg-gray-200 text-gray-400'}`}>로그인</button>
+        <p className="mt-3 text-xs text-gray-400">※ 학번은 이 구글 계정에 고정됩니다. 잘못 입력 시 관리자에게 문의하세요.</p>
+        {profileMsg && <p className="text-sm mt-3 text-center text-[#ef6644]">{profileMsg}</p>}
+        <div className="flex gap-2 mt-5">
+          <button onClick={signOut} className="flex-1 px-4 py-2 border rounded-lg text-[#16314f]">다른 계정</button>
+          <button onClick={submitProfile} disabled={busy || !profileForm.name.trim() || !profileForm.studentId.trim() || !profileForm.major.trim()}
+            className={`flex-1 px-4 py-2 rounded-lg font-bold ${profileForm.name.trim() && profileForm.studentId.trim() && profileForm.major.trim() && !busy ? 'bg-[#16314f] text-white' : 'bg-gray-200 text-gray-400'}`}>
+            {busy ? '등록 중…' : '등록하고 시작'}
+          </button>
         </div>
       </div>
+    </div>
+  );
+
+  // 로그인 후 홈
+  const renderHome = () => (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-[#eef0f2] p-6">
+      <img src="/logo.png" alt="SEJONG DANCE SPACE" className="w-64 max-w-[80%] mb-6 rounded-2xl shadow-sm" />
+      <p className="text-[#16314f] mb-6">안녕하세요, <b className="text-[#ef6644]">{profile?.name}</b>님! ({profile?.studentId})</p>
+      <button onClick={() => setCurrentScreen(1)} className="bg-[#16314f] text-white px-10 py-3 rounded-xl text-lg font-bold hover:bg-[#1e436b] transition">예약 시작하기</button>
     </div>
   );
 
@@ -229,15 +299,16 @@ export default function Home() {
         <div className="text-center mb-6">
           <div className="text-5xl mb-2">🏆</div>
           <h2 className="text-2xl font-extrabold text-[#16314f]">세종연습왕 TOP 10</h2>
-          <p className="text-gray-500 text-sm">이번 달 연습 시간 랭킹</p>
-          {userInfo.name && <p className="mt-3 text-sm text-[#16314f] bg-white rounded-lg py-2 shadow-sm">안녕하세요, <b className="text-[#ef6644]">{userInfo.name}</b>님!</p>}
-          <p className="mt-3 text-xs text-[#ef6644]">오른쪽으로 스와이프하면 연습실 예약으로 이동 →</p>
+          <p className="text-gray-500 text-sm">이용 시간 랭킹 (승인된 예약 기준)</p>
+          <p className="mt-3 text-xs text-[#ef6644]">스와이프하면 연습실 예약으로 이동 →</p>
         </div>
         <div className="space-y-2">
-          {topUsers.map((u, i) => (
-            <div key={u.rank} className={`flex items-center rounded-xl p-3 border ${i < 3 ? 'bg-[#fbe3dc] border-[#ef6644]' : 'bg-white border-gray-200'}`}>
+          {ranking.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center shadow text-gray-500 text-sm">아직 이용 기록이 없습니다.<br/>승인된 예약이 쌓이면 자동으로 순위가 표시됩니다.</div>
+          ) : ranking.map((u, i) => (
+            <div key={u.studentId || i} className={`flex items-center rounded-xl p-3 border ${i < 3 ? 'bg-[#fbe3dc] border-[#ef6644]' : 'bg-white border-gray-200'}`}>
               <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-sm mr-3 ${i < 3 ? 'bg-[#ef6644] text-white' : 'bg-[#eef0f2] text-[#16314f]'}`}>{u.rank}</div>
-              <div className="flex-1"><p className="font-bold text-[#16314f] text-sm">{u.name}</p><p className="text-xs text-gray-500">{u.major}</p></div>
+              <div className="flex-1"><p className="font-bold text-[#16314f] text-sm">{u.name} <span className="text-xs text-gray-400">{u.studentId}</span></p><p className="text-xs text-gray-500">{u.major}</p></div>
               <span className="font-extrabold text-[#ef6644]">{u.hours}h</span>
             </div>
           ))}
@@ -276,7 +347,7 @@ export default function Home() {
               const isDawn = hour >= 23 || hour < 7;
               const isWeekend = selectedDate.getDay() === 0 || selectedDate.getDay() === 6;
               const special = isDawn || isWeekend;
-              const mine = r && r.studentId === userInfo.studentId && r.name === userInfo.name;
+              const mine = r && profile && r.studentId === profile.studentId;
               let cls = 'bg-[#e6f4ea] border-[#9bd4af] text-[#1f7a44]';
               if (r) cls = r.status === 'approved' ? 'bg-[#16314f] border-[#16314f] text-white' : r.status === 'pending' ? 'bg-[#fbe3dc] border-[#f4b6a6] text-[#ef6644]' : 'bg-gray-300 border-gray-300 text-white';
               else if (isDawn) cls = 'bg-[#fde8d6] border-[#f0c089] text-[#b9651b]';
@@ -303,10 +374,8 @@ export default function Home() {
       <div className="min-h-screen bg-[#eef0f2] p-4">
         <div className="max-w-2xl mx-auto pt-20">
           <h2 className="text-2xl font-extrabold text-[#16314f] text-center mb-1">내 예약 현황</h2>
-          <p className="text-center text-gray-500 text-sm mb-6">{userInfo.name ? `${userInfo.name}님의 예약 내역` : '로그인이 필요합니다'}</p>
-          {!userInfo.name ? (
-            <div className="bg-white rounded-xl p-8 text-center shadow"><p className="text-gray-600 mb-4">먼저 로그인해 주세요.</p><button onClick={() => setShowLogin(true)} className="bg-[#16314f] text-white px-6 py-3 rounded-lg font-bold">로그인</button></div>
-          ) : my.length === 0 ? (
+          <p className="text-center text-gray-500 text-sm mb-6">{profile?.name}님의 예약 내역</p>
+          {my.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center shadow"><p className="text-gray-600 mb-4">예약 내역이 없습니다.</p><button onClick={() => setCurrentScreen(2)} className="bg-[#16314f] text-white px-6 py-3 rounded-lg font-bold">연습실 보기</button></div>
           ) : (
             <div className="space-y-3">
@@ -322,20 +391,6 @@ export default function Home() {
       </div>
     );
   };
-
-  const renderUserForm = () => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-        <h3 className="text-lg font-extrabold text-center text-[#16314f] mb-1">세부전공 입력</h3>
-        <p className="text-sm text-gray-500 text-center mb-4">예약을 위해 세부전공을 입력해 주세요</p>
-        <input type="text" value={userInfo.major} onChange={(e) => setUserInfo({ ...userInfo, major: e.target.value })} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-[#ef6644] outline-none" placeholder="예: 실용무용전공" />
-        <div className="flex gap-2 mt-5">
-          <button onClick={() => setShowUserForm(false)} className="flex-1 px-4 py-2 border rounded-lg text-[#16314f]">취소</button>
-          <button onClick={() => { if (userInfo.major.trim() && selectedRoom && selectedTime) { makeReservation(selectedRoom, selectedDate, selectedTime); setShowUserForm(false); } }} disabled={!userInfo.major.trim()} className={`flex-1 px-4 py-2 rounded-lg font-bold ${userInfo.major.trim() ? 'bg-[#16314f] text-white' : 'bg-gray-200 text-gray-400'}`}>예약</button>
-        </div>
-      </div>
-    </div>
-  );
 
   const renderCancel = () => (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
@@ -357,27 +412,29 @@ export default function Home() {
   );
 
   const renderScreen = () => {
-    if (showLogin) return renderLogin();
-    if (!userInfo.name) return renderMain();
-    if (currentScreen === 0) return renderMain();
+    if (!authChecked) return <div className="min-h-screen flex items-center justify-center bg-[#eef0f2] text-gray-400">불러오는 중…</div>;
+    if (!signedIn) return renderWelcome();
+    if (!profile) return renderProfileSetup();
+    if (currentScreen === 0) return renderHome();
     if (currentScreen === 1) return renderRanking();
     if (currentScreen === -1) return renderMy();
     return renderRoom(practiceRooms[currentScreen - 2]);
   };
 
+  const appReady = authChecked && signedIn && !!profile;
+
   return (
     <div className="relative overflow-hidden" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} ref={containerRef}>
-      {userInfo.name && renderMenu()}
-      {!showLogin && <TopRightLogo />}
+      {appReady && renderMenu()}
+      {appReady && <TopRightLogo />}
       {renderScreen()}
-      {userInfo.name && currentScreen > 0 && (
+      {appReady && currentScreen > 0 && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-full px-4 py-2 shadow-lg flex items-center gap-2 z-40">
           <button onClick={() => handleSwipe('right')} className="p-1">←</button>
           <span className="text-sm font-semibold text-[#16314f]">{currentScreen} / {practiceRooms.length + 1}</span>
           <button onClick={() => handleSwipe('left')} className="p-1">→</button>
         </div>
       )}
-      {showUserForm && renderUserForm()}
       {showCancelModal && renderCancel()}
     </div>
   );

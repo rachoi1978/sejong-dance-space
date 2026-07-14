@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
 import { getSupabase } from "./supabase";
+import { getVerifiedEmail } from "./supabaseAuth";
 
 export type AdminSession = {
   email: string;
@@ -19,34 +19,17 @@ export function isMaster(email: string): boolean {
   return getMasterEmails().includes(String(email).trim().toLowerCase());
 }
 
-/** 로그인 세션 쿠키(sds_admin)에서 이메일을 읽는다. (Next 표준 cookies() 사용) */
-export async function getSessionEmail(): Promise<string | null> {
-  try {
-    const store = await cookies();
-    const raw = store.get("sds_admin")?.value;
-    if (!raw) return null;
-    let email = raw;
-    try { email = decodeURIComponent(raw); } catch {}
-    email = email.trim().toLowerCase();
-    if (!email || email === "1") return null;
-    return email;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * 현재 요청의 관리자 신원 확인.
- * - 마스터: ADMIN_EMAILS 포함 이메일
- * - 일반관리자: sds_admins 에서 status === "approved"
- * (req 인자는 호환용이며 사용하지 않는다)
+ * 관리자 신원 확인.
+ * 1) 구글 로그인으로 검증된 이메일을 가져오고(위조 불가)
+ * 2) 마스터거나, sds_admins에서 승인된(approved) 관리자여야 통과.
  */
-export async function resolveAdmin(_req?: Request): Promise<AdminSession | null> {
-  const email = await getSessionEmail();
-  if (!email) return null;
+export async function resolveAdmin(): Promise<AdminSession | null> {
+  const v = await getVerifiedEmail();
+  if (!v) return null;
 
-  if (isMaster(email)) {
-    return { email, name: email, role: "master" };
+  if (isMaster(v.email)) {
+    return { email: v.email, name: v.name || v.email, role: "master" };
   }
 
   try {
@@ -54,12 +37,14 @@ export async function resolveAdmin(_req?: Request): Promise<AdminSession | null>
     const { data } = await sb
       .from("sds_admins")
       .select("email,name,status")
-      .eq("email", email)
+      .eq("email", v.email)
       .eq("status", "approved")
       .maybeSingle();
-    if (data) return { email, name: (data as any).name || email, role: "admin" };
+    if (data) {
+      return { email: v.email, name: (data as any).name || v.name, role: "admin" };
+    }
   } catch {
-    // 권한 없음 처리
+    // 권한 없음
   }
   return null;
 }
