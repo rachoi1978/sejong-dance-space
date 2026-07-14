@@ -121,23 +121,66 @@ export default function Home() {
   // ---------- 예약/취소 ----------
   const makeReservation = async (roomId: string, date: Date, time: string) => {
     const room = rooms.find(r => r.id === roomId);
+    const dk = date.toDateString();
+    const hour = parseInt(time.split(':')[0]);
+    const isDawn = hour >= 23 || hour < 7;
+    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+    const optimisticStatus = (room?.needsApproval || isDawn || isWeekend) ? 'pending' : 'approved';
+
+    // 1) 즉시 화면에 반영 (낙관적 업데이트)
+    setReservations((prev: any) => ({
+      ...prev,
+      [roomId]: { ...prev[roomId], [dk]: { ...prev[roomId]?.[dk], [time]: { _id: null, studentId: profile?.studentId, name: profile?.name, major: profile?.major, status: optimisticStatus, saving: true } } },
+    }));
+
+    // 2) 서버 저장은 뒤에서
     try {
       const res = await fetch('/api/reservations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId, roomName: room?.name || roomId, dateKey: date.toDateString(), timeKey: time }),
+        body: JSON.stringify({ roomId, roomName: room?.name || roomId, dateKey: dk, timeKey: time }),
       });
       if (res.status === 409) { alert('이미 예약된 시간입니다.'); await loadReservations(); return; }
-      if (!res.ok) { const j = await res.json().catch(() => ({})); alert(j.error || '예약에 실패했습니다.'); return; }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(j.error || '예약에 실패했습니다.');
+        await loadReservations(); // 실패 시 되돌림
+        return;
+      }
+      const j = await res.json().catch(() => ({}));
+      // 성공: 실제 id/상태로 교체 (전체 재조회 없이)
+      setReservations((prev: any) => ({
+        ...prev,
+        [roomId]: { ...prev[roomId], [dk]: { ...prev[roomId]?.[dk], [time]: { _id: j.id, studentId: profile?.studentId, name: profile?.name, major: profile?.major, status: j.status || optimisticStatus } } },
+      }));
+    } catch {
+      alert('예약 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
       await loadReservations();
-    } catch { alert('예약 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'); }
+    }
   };
-  const cancelReservation = async (resv: any) => {
+  const cancelReservation = async (target: any) => {
+    const resv = target?.reservation;
     if (!resv?._id) { await loadReservations(); return; }
+
+    // 1) 즉시 화면에서 제거 (낙관적 업데이트)
+    const { roomId, date, time } = target;
+    const dk = date.toDateString();
+    setReservations((prev: any) => {
+      const n = { ...prev, [roomId]: { ...prev[roomId], [dk]: { ...prev[roomId]?.[dk] } } };
+      delete n[roomId][dk][time];
+      return n;
+    });
+
+    // 2) 서버 삭제는 뒤에서
     try {
       const r = await fetch(`/api/reservations/${resv._id}`, { method: 'DELETE' });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); alert(j.error || '취소에 실패했습니다.'); }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(j.error || '취소에 실패했습니다.');
+        await loadReservations(); // 실패 시 되돌림
+      }
+    } catch {
       await loadReservations();
-    } catch {}
+    }
   };
   const openCancelModal = (roomId: string, date: Date, time: string, r: any) => { setCancelTarget({ roomId, date, time, reservation: r }); setShowCancelModal(true); };
 
@@ -428,7 +471,7 @@ export default function Home() {
         )}
         <div className="flex gap-2">
           <button onClick={() => setShowCancelModal(false)} className="flex-1 px-4 py-2 border rounded-lg text-[#16314f]">닫기</button>
-          <button onClick={() => { if (cancelTarget) { cancelReservation(cancelTarget.reservation); setShowCancelModal(false); setCancelTarget(null); } }} className="flex-1 px-4 py-2 bg-[#ef6644] text-white rounded-lg font-bold">취소하기</button>
+          <button onClick={() => { if (cancelTarget) { cancelReservation(cancelTarget); setShowCancelModal(false); setCancelTarget(null); } }} className="flex-1 px-4 py-2 bg-[#ef6644] text-white rounded-lg font-bold">취소하기</button>
         </div>
       </div>
     </div>
